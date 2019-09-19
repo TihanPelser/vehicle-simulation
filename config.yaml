@@ -1,0 +1,25 @@
+simulation-parameters:
+    timestep: 0.001
+    time-out: 50.0
+    input-type: "path"
+    input: "Report Tests/SingleSinePath/single_sine_path.txt"
+    debug: True
+
+tyre-model:
+    data: "Tyre_Model.txt"
+
+controller:
+#    type: "PID"
+#    gains:
+#        p-lat: 0.1
+#        i-lat: 0.01
+#        d-lat: 1.0
+#        p-yaw: 1.0
+#        i-yaw: 1.0
+#        d-yaw: 1.0
+    type: "DQN"
+    gains:
+        R-gain-mat: [[1.0],[0,1]]
+        Q-gain-mat: [[1.0],[0,1]]
+vehicle-parameters:
+    m: 144
