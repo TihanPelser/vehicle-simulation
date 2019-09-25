@@ -7,6 +7,9 @@ import logging
 from typing import Optional, List
 from collections import namedtuple
 import time
+import pygame
+import sys
+from numba import jit
 
 
 class Simulation:
@@ -15,11 +18,14 @@ class Simulation:
     # CUSTOM DATA TYPES
     #  NamedTuple to save initial setup state for reset
     Initial = namedtuple("Initial", "name input_type input_data dt timeout debug waypoint_threshold")
+    StepReturn = namedtuple("StepReturn", "state reward progress terminal run_time end_condition")
     #  NamedTuple to save closest points and index of closest point in all points
     ClosestPoints = namedtuple("ClosestPoints", "p1 p2 start_index")
 
     controller: DQNController
     vehicle: Vehicle
+
+    _vehicle_coords: List = []
 
     # Simulation parameters
     debug: bool
@@ -42,6 +48,20 @@ class Simulation:
 
     style.use('fast')
 
+    # PyGame Settings
+    SIZE = 1280, 720
+    _screen: Optional[pygame.Surface]
+    _vehicle_sprite: Optional[pygame.Surface]
+    _vehicle_sprite_rect: Optional[pygame.Rect]
+    _vehicle_sprite_angle: Optional[float]
+    _path_origin: Optional[tuple]
+    _scaling_factor: Optional[float]
+    _scaling_factor: Optional[float]
+    _data_font: Optional[pygame.font.Font]
+    _heading_font: Optional[pygame.font.Font]
+    _text_box: Optional[pygame.Rect]
+    _waypoint_render_radius: Optional[int]
+
     # fig = plt.figure()
     # ax1 = fig.add_subplot(1, 1, 1)
 
@@ -58,6 +78,10 @@ class Simulation:
             self.episode = 0
             self.points_reached = 0
             self.has_been_reset = False
+            pygame.init()
+
+            print("Sim created...")
+            print(f"Number of Waypoints: {len(input_data)}")
 
             # self.reset()
 
@@ -71,6 +95,7 @@ class Simulation:
         self.has_been_reset = True
         self.episode += 1
         self.points_reached = 0
+        self._vehicle_coords = []
 
         self.dt = self.initial.dt
         self.timeout = self.initial.timeout
@@ -103,6 +128,17 @@ class Simulation:
         vehicle_coords = vehicle_status[0:2]
         vehicle_heading = vehicle_status[2]
         state = self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
+
+        # Rendering
+        self._screen = None
+        self._vehicle_sprite = None
+        self._vehicle_sprite_rect = None
+        self._path_origin = None
+        self._heading_font = None
+        self._data_font = None
+        self._text_box = None
+        self._vehicle_sprite_angle = None
+        self._waypoint_render_radius = None
 
         return state
 
@@ -220,6 +256,7 @@ class Simulation:
             if self.prev_distance is not None:
                 if d1 >= self.prev_distance:
                     self.iterations_without_progress += 1
+                    self.prev_distance = d1
                     reward = -1
                 else:
                     self.prev_distance = d1
@@ -229,11 +266,9 @@ class Simulation:
                 self.prev_distance = d1
                 self.iterations_without_progress = 0
                 reward = 1
-            return reward
 
         elif reward_type == "angle":
             # Angle on target reward system
-
             if self.prev_angle is not None:
                 if theta1 >= self.prev_angle:
                     self.iterations_without_progress += 1
@@ -248,11 +283,127 @@ class Simulation:
                 self.iterations_without_progress = 0
                 reward = 1
 
-            return reward
-########################################################################################################################
-# -------------------------------------------------RUN FUNCTIONS------------------------------------------------------ #
-########################################################################################################################
+        elif reward_type == "granular-angle":
+            reward = 5 - abs(np.degrees(theta1))
 
+        elif reward_type == "log":
+            reward = 100 * (- np.log(0.5*theta1 + np.exp(1) - np.pi/8) + 1)
+
+        return reward
+
+    def _setup_rendering(self):
+        x_max = np.max(self.input_data[:, 0])
+        x_min = np.min(self.input_data[:, 0])
+        y_max = np.max(self.input_data[:, 1])
+        y_min = np.min(self.input_data[:, 1])
+
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+
+        available_x_space = self.SIZE[0] - 250
+        available_y_space = self.SIZE[1] - 50
+
+        # Set Scaling Factors
+        x_scale = available_x_space / x_range
+        y_scale = available_y_space / y_range
+
+        if x_scale >= y_scale:
+            self._scaling_factor = y_scale
+        else:
+            self._scaling_factor = x_scale
+
+        self._waypoint_render_radius = int(round(self.waypoint_threshold * self._scaling_factor))
+
+        # Set Origins
+        data_origin = self.input_data[0]
+        x_distance_to_min = data_origin[0] - x_min
+        y_distance_to_max = y_max - data_origin[1]
+
+        self._path_origin = (25 + int(round(x_distance_to_min * self._scaling_factor)),
+                             25 + int(round(y_distance_to_max * self._scaling_factor)))
+
+        self._text_box = pygame.Rect(self.SIZE[0] - 200, 0, 200, self.SIZE[1])
+
+        # Create Display and Load Sprites
+        self._screen = pygame.display.set_mode(self.SIZE)
+        self._vehicle_sprite = pygame.image.load("res/SoftTarget.png")
+
+        vehicle_length = int(round(2 * self._scaling_factor))
+        vehicle_width = int(round(2 * self._scaling_factor))
+        self._vehicle_sprite = pygame.transform.scale(self._vehicle_sprite, (vehicle_length, vehicle_width))
+        self._vehicle_sprite_rect = self._vehicle_sprite.get_rect()
+
+        self._heading_font = pygame.font.SysFont('arial', 20)
+        self._data_font = pygame.font.SysFont('arial', 10)
+
+    def _rendering_coordinate_conversion(self, coords):
+
+        coord_array = np.array(coords)
+
+        if coord_array.shape == (2,):
+            coord_array = np.expand_dims(coord_array, axis=0)
+
+        x = [int(round(self._path_origin[0] + self._scaling_factor * coord[0])) for coord in coord_array]
+        y = [int(round(self._path_origin[1] - self._scaling_factor * coord[1])) for coord in coord_array]
+        new_coords = list(zip(x, y))
+
+        if len(new_coords) == 1:
+            return new_coords[0]
+
+        return new_coords
+
+    def _draw_data(self, vehicle_heading, vehicle_delta):
+        # Draw Axes
+        pygame.draw.line(self._screen, (0, 0, 0), tuple(np.subtract(self._path_origin, [25, 0])),
+                         tuple(np.add(self._path_origin, [50, 0])), 1)
+        pygame.draw.line(self._screen, (0, 0, 0), tuple(np.subtract(self._path_origin, (0, 25))),
+                         tuple(np.add(self._path_origin, (0, 50))), 1)
+        
+        # Draw Waypoints
+        for point in self.input_data:
+            pygame.draw.circle(self._screen, (10, 200, 10), self._rendering_coordinate_conversion(point), 2)
+
+            pygame.draw.circle(self._screen, (200, 10, 10), self._rendering_coordinate_conversion(point),
+                               self._waypoint_render_radius, 1)
+            
+        # Draw Vehicle Data
+        if len(self._vehicle_coords) >= 2:
+            pygame.draw.lines(self._screen, (0, 0, 0), False,
+                              self._rendering_coordinate_conversion(self._vehicle_coords), 1)
+        
+        # Draw textbox and text
+        text_heading = self._heading_font.render("VEHICLE DATA", True, (0, 0, 0))
+        text_heading_rect = text_heading.get_rect()
+        text_heading_lefttop = (self._text_box.centerx - int(round(text_heading_rect.width / 2) + 20), 50)
+
+        heading_label = self._data_font.render("VEHICLE HEADING", True, (0, 0, 0))
+        heading_label_rect = heading_label.get_rect()
+        heading_label_lefttop = (self._text_box.centerx - int(round(heading_label_rect.width / 2) + 20), 100)
+
+        heading_data = self._data_font.render(f"{np.degrees(vehicle_heading)}", True, (200, 10, 10))
+        heading_data_rect = heading_data.get_rect()
+        heading_data_lefttop = (self._text_box.centerx - int(round(heading_data_rect.width / 2) + 20), 120)
+
+        steering_label = self._data_font.render("VEHICLE STEERING ANGLE", True, (0, 0, 0))
+        steering_label_rect = steering_label.get_rect()
+        steering_label_lefttop = (self._text_box.centerx - int(round(steering_label_rect.width / 2 + 20)), 145)
+
+        steering_data = self._data_font.render(f"{round(np.degrees(vehicle_delta))}", True, (200, 10, 10))
+        steering_data_rect = steering_data.get_rect()
+        steering_data_lefttop = (self._text_box.centerx - int(round(steering_data_rect.width / 2) + 20), 165)
+
+        self._screen.blit(text_heading, text_heading_lefttop)
+        self._screen.blit(heading_label, heading_label_lefttop)
+        self._screen.blit(heading_data, heading_data_lefttop)
+        self._screen.blit(steering_label, steering_label_lefttop)
+        self._screen.blit(steering_data, steering_data_lefttop)
+        pygame.draw.rect(self._screen, (0, 0, 0), self._text_box, 1)
+            
+            
+########################################################################################################################
+# -------------------------------------------RUN AND RENDER FUNCTIONS------------------------------------------------- #
+########################################################################################################################
+    # @jit()
     def step(self, step_type: str, input: Optional = None, speed: float = None):
 
         if self.terminal:
@@ -279,21 +430,31 @@ class Simulation:
 
         vehicle_status = self.vehicle.drive(angle, speed)
         vehicle_coords = vehicle_status[0:2]
+        self._vehicle_coords.append(vehicle_coords)
         vehicle_heading = vehicle_status[2]
 
         state = self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
 
         self.run_time += self.dt
 
-        reward = self._calculate_reward(reward_type="angle", state=state)
+        reward = self._calculate_reward(reward_type="log", state=state)
 
-        if self.iterations_without_progress >= 100:
+        end_condition = ""
+
+        if self.iterations_without_progress >= 50:
             self.terminal = True
+            end_condition = "No progress"
 
         if self.run_time >= self.timeout:
             self.terminal = True
+            end_condition = "Timeout"
 
-        return state, reward, self.points_reached, self.terminal, self.run_time
+        if abs(state[2]) >= np.radians(90):
+            self.terminal = True
+            end_condition = "Error exceeded 90 degrees"
+
+        return self.StepReturn(state=state, reward=reward, progress=self.points_reached, terminal=self.terminal,
+                               run_time=self.run_time, end_condition=end_condition)
 
     def _run_steering(self) -> pd.DataFrame:
         for angle in self.input_data:
@@ -302,8 +463,55 @@ class Simulation:
 
         return self.vehicle.parameter_history()
 
+    def render(self):
+        if self._screen is None:
+            self._setup_rendering()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                print("Simulation stopped. Exiting.")
+                sys.exit()
+
+        vehicle_status = self.vehicle.get_status()
+        vehicle_delta = self.vehicle.delta
+
+        # Clear Screen
+        self._screen.fill((255, 255, 255))
+        # Draw axes, points etc.
+        self._draw_data(vehicle_heading=vehicle_status[2], vehicle_delta=vehicle_delta)
+
+        # Draw vehicle heading
+        # First calculates scaled angle
+        x = np.cos(vehicle_status[2])
+        y = np.sin(vehicle_status[2])
+        theta_prime = np.arctan2(y * self._scaling_factor, x * self._scaling_factor)
+
+        vehicle_pos = self._rendering_coordinate_conversion(vehicle_status[:2])
+        end = [vehicle_pos[0] + 25 * np.cos(theta_prime), vehicle_pos[1] - 25 * np.sin(theta_prime)]
+        pygame.draw.line(self._screen, (10, 10, 200), vehicle_pos, end, 1)
+
+        # Draw vehicle steering angle
+        # First calculates scaled angle
+        x = np.cos(vehicle_delta)
+        y = np.sin(vehicle_delta)
+        delta_prime = np.arctan2(y * self._scaling_factor, x * self._scaling_factor)
+
+        end = [vehicle_pos[0] + round(25 * np.cos(delta_prime)), vehicle_pos[1] - round(25 * np.sin(delta_prime))]
+        pygame.draw.line(self._screen, (10, 200, 10), vehicle_pos, end, 1)
+
+        # Render Vehicle
+        # Rotate Image (return copy)
+        rotated_vehicle_sprite = pygame.transform.rotate(self._vehicle_sprite, np.degrees(theta_prime))
+
+        self._vehicle_sprite_rect = rotated_vehicle_sprite.get_rect()
+        self._vehicle_sprite_rect.center = vehicle_pos
+        self._screen.blit(rotated_vehicle_sprite, self._vehicle_sprite_rect)
+
+        # Display everything
+        pygame.display.flip()
+
 ########################################################################################################################
-# ---------------------------------------------LOGGING FUNCTIONS------------------------------------------------------ #
+# -------------------------------------LOGGING AND RENDERING FUNCTIONS------------------------------------------------ #
 ########################################################################################################################
 
     def log_error_information(self):

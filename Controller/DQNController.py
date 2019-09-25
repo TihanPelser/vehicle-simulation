@@ -1,17 +1,19 @@
 import random
 import numpy as np
+import tensorflow as tf
+# from tensorflow.keras import
 from collections import deque
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.optimizers import Adam
 
-ENV_NAME = 'CartPole-v1'
+import keras
 
 GAMMA = 0.8
 LEARNING_RATE = 0.001
 
 MEMORY_SIZE = 1000000
-BATCH_SIZE = 20
+BATCH_SIZE = 128
 
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.01
@@ -20,7 +22,11 @@ EXPLORATION_DECAY = 0.99999
 
 class DQNController:
 
-    def __init__(self, observation_space, action_space):
+    def __init__(self, observation_space, action_space, check_name: str):
+        config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 16})
+        sess = tf.Session(config=config)
+        keras.backend.set_session(sess)
+
         self.exploration_rate = EXPLORATION_MAX
 
         self.action_space = action_space
@@ -30,7 +36,10 @@ class DQNController:
         self.model.add(Dense(24, input_shape=(observation_space,), activation="relu"))
         self.model.add(Dense(24, activation="relu"))
         self.model.add(Dense(self.action_space, activation="linear"))
-        self.model.compile(loss="mse", optimizer=Adam(lr=LEARNING_RATE))
+        self.model.compile(loss=tf.keras.losses.Huber(), optimizer=Adam(lr=LEARNING_RATE))
+        self.checkpoint = keras.callbacks.ModelCheckpoint(filepath=f"./{check_name}.hdf5", verbose=1,
+                                                          period=10000)
+        self.callbacks_list = [self.checkpoint]
         self.parameter_history = []
 
     def remember(self, state, action, reward, next_state, done):
@@ -52,7 +61,7 @@ class DQNController:
                 q_update = (reward + GAMMA * np.amax(self.model.predict(state_next)[0]))
             q_values = self.model.predict(state)
             q_values[0][action] = q_update
-            self.model.fit(state, q_values, verbose=0)
+            self.model.fit(state, q_values, verbose=0, callbacks=self.callbacks_list)
         self.exploration_rate *= EXPLORATION_DECAY
         self.exploration_rate = max(EXPLORATION_MIN, self.exploration_rate)
 
