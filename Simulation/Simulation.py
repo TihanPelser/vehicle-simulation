@@ -432,7 +432,7 @@ class Simulation:
         heading_er_1_label_rect = heading_er_1_label.get_rect()
         heading_er_1_label_lefttop = (self._text_box.centerx - int(round(heading_er_1_label_rect.width / 2 + 20)), 190)
         # Heading Error 1 Data
-        heading_er_1_data = self._data_font.render(f"{round(np.degrees(self.last_state[2]))}", True, (200, 10, 10))
+        heading_er_1_data = self._data_font.render(f"{round(np.rad2deg(self.last_state[2]))}", True, (200, 10, 10))
         heading_er_1_data_rect = heading_er_1_data.get_rect()
         heading_er_1_data_lefttop = (self._text_box.centerx - int(round(heading_er_1_data_rect.width / 2) + 20), 210)
         # Heading Error 2 Label
@@ -440,7 +440,7 @@ class Simulation:
         heading_er_2_label_rect = heading_er_2_label.get_rect()
         heading_er_2_label_lefttop = (self._text_box.centerx - int(round(heading_er_2_label_rect.width / 2 + 20)), 235)
         # Heading Error 2 Data
-        heading_er_2_data = self._data_font.render(f"{round(np.degrees(self.last_state[3]))}", True, (200, 10, 10))
+        heading_er_2_data = self._data_font.render(f"{round(np.rad2deg(self.last_state[3]))}", True, (200, 10, 10))
         heading_er_2_data_rect = heading_er_2_data.get_rect()
         heading_er_2_data_lefttop = (self._text_box.centerx - int(round(heading_er_2_data_rect.width / 2) + 20), 255)
         # Distance 1 Label
@@ -487,16 +487,14 @@ class Simulation:
 # -------------------------------------------RUN AND RENDER FUNCTIONS------------------------------------------------- #
 ########################################################################################################################
     # @jit()
-    def step(self, step_type: str = "action", input: Optional = None, speed: float = None):
-
+    def step(self, action: int, speed: float = None):
+        # TODO: Fix step function to iterate a few times before returning
         if self.terminal:
             logging.error("Terminal state has been reached. Please call sim.reset() in order to restart the simulation")
             return None
         if not self.has_been_reset:
             logging.error("Please call .reset() before calling .step()")
             return None
-
-        if step_type == "action":
             # Actions are encoded as:
             # 0 = 20 degrees left
             # 1 = 15 degrees left
@@ -508,71 +506,57 @@ class Simulation:
             # 7 = 15 degrees right
             # 8 = 20 degrees right
 
-            if input == 0:
-                inc = (20 - np.degrees(self.vehicle.delta)) / 10
-            elif input == 1:
-                inc = (15 - np.degrees(self.vehicle.delta)) / 10
-            elif input == 2:
-                inc = (10 - np.degrees(self.vehicle.delta)) / 10
-            elif input == 3:
-                inc = (5 - np.degrees(self.vehicle.delta)) / 10
-            elif input == 4:
-                inc = (0 - np.degrees(self.vehicle.delta)) / 10
-            elif input == 5:
-                inc = (- 5 - np.degrees(self.vehicle.delta)) / 10
-            elif input == 6:
-                inc = (- 10 - np.degrees(self.vehicle.delta)) / 10
-            elif input == 7:
-                inc = (- 15 - np.degrees(self.vehicle.delta)) / 10
-            elif input == 8:
-                inc = (- 20 - np.degrees(self.vehicle.delta)) / 10
+        if action == 0:
+            steer_angle = 20
+        elif action == 1:
+            steer_angle = 15
+        elif action == 2:
+            steer_angle = 10
+        elif action == 3:
+            steer_angle = 5
+        elif action == 4:
+            steer_angle = 0
+        elif action == 5:
+            steer_angle = -5
+        elif action == 6:
+            steer_angle = -10
+        elif action == 7:
+            steer_angle = -15
+        elif action == 8:
+            steer_angle = -20
 
-            # OLD IMPLEMENTATION
-            # if input == 0:
-            #     angle = self.vehicle.delta - np.radians(1)
-            # elif input == 1:
-            #     angle = self.vehicle.delta + np.radians(1)
+        # OLD IMPLEMENTATION
+        # if input == 0:
+        #     angle = self.vehicle.delta - np.radians(1)
+        # elif input == 1:
+        #     angle = self.vehicle.delta + np.radians(1)
 
-            else:
-                logging.error("Invalid action")
-                return None
-
-        elif step_type == "steer":
-            angle = input
         else:
-            logging.error("Parameters must contain either steering_angle or action")
+            logging.error("Invalid action")
             return None
 
-        for iteration in range(self.iterations_per_step):
-            if iteration < 10:
-                angle = self.vehicle.delta + np.radians(inc)
-            else:
-                angle = self.vehicle.delta
-            # print(f"Step {iteration}")
-            vehicle_status = self.vehicle.drive(angle, speed)
-            vehicle_coords = vehicle_status[0:2]
-            self._vehicle_coords.append(vehicle_coords)
-            # print(f"Vehicle status: {vehicle_status}")
-            vehicle_heading = vehicle_status[2]
-            self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
-            self.run_time += self.dt
+        steer_angle = np.deg2rad(steer_angle)
+        vehicle_status = self.vehicle.drive(steering_angle=steer_angle)
+        vehicle_coords = vehicle_status[0:2]
+        self._vehicle_coords.append(vehicle_coords)
+        # print(f"Vehicle status: {vehicle_status}")
+        vehicle_heading = vehicle_status[2]
+        self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
+        self.run_time += self.dt
 
-            end_condition = ""
+        end_condition = ""
 
-            if self.iterations_without_progress >= 50:
-                self.terminal = True
-                end_condition = "No progress"
-                break
+        if self.iterations_without_progress >= 50:
+            self.terminal = True
+            end_condition = "No progress"
 
-            if self.run_time >= self.timeout:
-                self.terminal = True
-                end_condition = "Timeout"
-                break
+        if self.run_time >= self.timeout:
+            self.terminal = True
+            end_condition = "Timeout"
 
-            if abs(self.last_state[2]) >= np.radians(120):
-                self.terminal = True
-                end_condition = "Error exceeded 90 degrees"
-                break
+        if abs(self.last_state[2]) >= np.radians(120):
+            self.terminal = True
+            end_condition = "Error exceeded 90 degrees"
 
         reward = self._calculate_reward(reward_type="penalty", state=self.last_state)
 

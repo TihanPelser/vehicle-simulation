@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib import style
 
-TRAINING_FILES = ["DoubleLaneChange.txt", "Sine.txt"]
+TRAINING_FILES = ["DLC.txt", "Sine.txt"]
 TIMESTEP = 0.001
 SAVE_NAME = "PENALTY_SCORE_MULTIPLE_STEPS_9_OUTPUT"
 LIVE_PLOT = True
@@ -26,7 +26,7 @@ def read_data(file_name: str):
         for line in file:
             vals = line.split(',')
             file_data.append([float(vals[0]), float(vals[1])])
-    return file_data
+    return np.array(file_data)
 
 
 def log(run, steps, points, reward):
@@ -59,8 +59,7 @@ def animate(i):
 if __name__ == "__main__":
 
     data = read_data(TRAINING_FILES[0])
-
-    data = np.array(data[0::10])  # Take every tenth value
+    # data = np.array(data[0::10])  # Take every tenth value
 
     tyre_model = LinearTyre()
     vehicle = Vehicle(tyre_model=tyre_model, dt=TIMESTEP)
@@ -101,11 +100,11 @@ if __name__ == "__main__":
             while True:
 
                 step += 1
-                # simulation.render()
+                simulation.render()
                 action = dqn.act(state)
                 # state_next, reward, points_reached, terminal, time = simulation.step(step_type="action", input=action)
                 step_time_taken = time.time()
-                results = simulation.step(step_type="action", input=action)
+                results = simulation.step(action=action)
                 step_time += time.time() - step_time_taken
 
                 state_next = results.state
