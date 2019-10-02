@@ -5,11 +5,19 @@ from VehicleModel.Vehicle import Vehicle
 from TyreModels.LinearCutoffTyreModel import LinearTyre
 import numpy as np
 import time
-
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from matplotlib import style
 
 TRAINING_FILES = ["DoubleLaneChange.txt", "Sine.txt"]
-TIMESTEP = 0.01
-SAVE_NAME = "LOG_SCORE_DQN_HUBER_LOSS"
+TIMESTEP = 0.001
+SAVE_NAME = "PENALTY_SCORE_MULTIPLE_STEPS_9_OUTPUT"
+LIVE_PLOT = True
+LOGGING_FILE = f"{SAVE_NAME}_LOG.txt"
+
+style.use('fivethirtyeight')
+fig = plt.figure()
+ax1 = fig.add_subplot(1, 1, 1)
 
 
 def read_data(file_name: str):
@@ -21,19 +29,46 @@ def read_data(file_name: str):
     return file_data
 
 
+def log(run, steps, points, reward):
+    with open(LOGGING_FILE, "a") as file:
+        file.write(f"{run}\t{steps}\t{points}\t{reward}\n")
+
+
+def animate(i):
+    graph_data = open(LOGGING_FILE, 'r').read()
+    lines = graph_data.split('\n')
+    runs_list = []
+    steps_list = []
+    points_list = []
+    rewards_list = []
+    for line in lines:
+        if len(line) > 1:
+            run, steps, points, reward = line.split('\t')
+            runs_list.append(float(run))
+            steps_list.append(float(steps))
+            points_list.append(float(points))
+            rewards_list.append(float(reward))
+    ax1.clear()
+    ax1.plot(runs_list, steps_list, label="Steps")
+    ax1.plot(runs_list, points_list, label="Points Reached")
+    ax1.plot(runs_list, rewards_list, label="Rewards Obtained")
+    ax1.set_xlabel("Run")
+    ax1.legend()
+
+
 if __name__ == "__main__":
 
     data = read_data(TRAINING_FILES[0])
 
-    data = np.array(data[0::3])  # Take every third value
+    data = np.array(data[0::10])  # Take every tenth value
 
     tyre_model = LinearTyre()
     vehicle = Vehicle(tyre_model=tyre_model, dt=TIMESTEP)
     simulation = Simulation(sim_name="Training1", vehicle=vehicle, input_type="path", input_data=data,
-                            timestep=TIMESTEP, timeout=50., waypoint_threshold=0.5)
+                            timestep=TIMESTEP, timeout=50., iterations_per_step=50, waypoint_threshold=0.5)
     score_logger = ScoreLogger("Training1")
     observation_space = 4
-    action_space = 2
+    action_space = 9
     dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME)
     run = 0
 
@@ -53,6 +88,7 @@ if __name__ == "__main__":
 
             run += 1
             state = simulation.reset()
+            # state = np.array([state[0], state[2]]) # Drop d2 and theta2
             # print(state)
             state = np.reshape(state, [1, observation_space])
             step = 0
@@ -82,7 +118,7 @@ if __name__ == "__main__":
                 # reward = reward if not terminal else -reward
 
                 total_reward += reward
-
+                # state_next = np.array([state_next[0], state_next[2]]) # Drop d2 and theta2
                 state_next = np.reshape(state_next, [1, observation_space])
                 dqn.remember(state, action, reward, state_next, terminal)
                 state = state_next
@@ -136,6 +172,14 @@ if __name__ == "__main__":
                 else:
                     print("DQN failed to solve run.")
                 exit(1)
+
+            if LIVE_PLOT:
+                log(run=run, steps=step, points=points_reached, reward=total_reward)
+                ani = animation.FuncAnimation(fig, animate, interval=1000)
+                plt.show()
+
+            if run == 10:
+                simulation.log_data(file_name="TestLog")
 
     except KeyboardInterrupt:
         print("User exit")

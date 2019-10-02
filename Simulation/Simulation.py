@@ -17,7 +17,7 @@ class Simulation:
 
     # CUSTOM DATA TYPES
     #  NamedTuple to save initial setup state for reset
-    Initial = namedtuple("Initial", "name input_type input_data dt timeout debug waypoint_threshold")
+    Initial = namedtuple("Initial", "name input_type input_data dt timeout debug iterations_per_step waypoint_threshold")
     StepReturn = namedtuple("StepReturn", "state reward progress terminal run_time end_condition")
     #  NamedTuple to save closest points and index of closest point in all points
     ClosestPoints = namedtuple("ClosestPoints", "p1 p2 start_index")
@@ -37,7 +37,7 @@ class Simulation:
     episode: int
     simulation_name: str
     run_time: float
-    results: Optional[pd.DataFrame]
+    results: List
 
     closest_points: ClosestPoints
     number_of_points: int
@@ -45,6 +45,12 @@ class Simulation:
     prev_angle: Optional[float]
     iterations_without_progress: int
     terminal: bool
+    solved: bool
+    is_final: bool
+    waypoint_reached_in_step: bool
+    current_run: int
+    iterations_per_step: int
+    last_state: np.ndarray
 
     style.use('fast')
 
@@ -70,14 +76,16 @@ class Simulation:
 ########################################################################################################################
 
     def __init__(self, sim_name: str, vehicle: Vehicle,  input_type: str, input_data: np.ndarray, timestep: float,
-                 timeout: float, waypoint_threshold: float = 0.5, debug: bool = True):
+                 timeout: float, iterations_per_step: int, waypoint_threshold: float = 0.5, debug: bool = True):
         try:
             self.vehicle = vehicle
             self.initial = self.Initial(name=sim_name, input_type=input_type, input_data=input_data, dt=timestep,
-                                        timeout=timeout, debug=debug, waypoint_threshold=waypoint_threshold)
+                                        timeout=timeout, debug=debug, iterations_per_step=iterations_per_step,
+                                        waypoint_threshold=waypoint_threshold)
             self.episode = 0
             self.points_reached = 0
             self.has_been_reset = False
+            self.current_run = 0
             pygame.init()
 
             print("Sim created...")
@@ -102,9 +110,10 @@ class Simulation:
         self.input_type = self.initial.input_type
         self.input_data = self.initial.input_data
         self.debug = self.initial.debug
+        self.iterations_per_step = self.initial.iterations_per_step
         self.waypoint_threshold = self.initial.waypoint_threshold
         self.run_time = 0.
-        self.results: Optional[pd.DataFrame] = None
+        self.results = []
 
         name = self.initial.name
         t = time.strftime("%H-%M-%S", time.gmtime())
@@ -118,6 +127,10 @@ class Simulation:
         self.prev_angle = None
         self.iterations_without_progress = 0
         self.terminal = False
+        self.solved = False
+        self.is_final = False
+        self.waypoint_reached_in_step = False
+        self.current_run += 1
 
         if save_data:
             self.vehicle.reset(save_name=f"{self.simulation_name}")
@@ -127,7 +140,7 @@ class Simulation:
         vehicle_status = self.vehicle.get_status()
         vehicle_coords = vehicle_status[0:2]
         vehicle_heading = vehicle_status[2]
-        state = self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
+        self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
 
         # Rendering
         self._screen = None
@@ -140,36 +153,42 @@ class Simulation:
         self._vehicle_sprite_angle = None
         self._waypoint_render_radius = None
 
-        return state
+        return self.last_state
 
 ########################################################################################################################
 # -------------------------------------------CALCULATION FUNCTIONS---------------------------------------------------- #
 ########################################################################################################################
 
-    def _update_closest_points(self, vehicle_pos) -> bool:
+    def _update_closest_points(self, vehicle_pos):
         """
         Checks whether the vehicle has arrived at the next point and updates the 'closest_points' list accordingly
         :param vehicle_pos: Global position of the vehicle
         :return: Bool stating whether the next closest point is the final point
         """
+        self.waypoint_reached_in_step = False
         p1 = self.closest_points.p1
-        d1 = self._calculate_distances(vehicle_pos=vehicle_pos, p1=p1, is_final=True)[0]
+        d1 = self._calculate_distances(vehicle_pos=vehicle_pos, p1=p1, single_calc=True)[0]
 
         if d1 <= self.waypoint_threshold:
+            self.waypoint_reached_in_step = True
             ind = self.closest_points.start_index + 1
             self.points_reached += 1
-            if ind == self.number_of_points:
+            if self.is_final:
+                # If is_final then only one point remains
+                # Set to solved if final point reached
+                self.solved = True
+                self.is_final = True
+            elif ind == self.number_of_points - 1:
                 new_p1 = self.input_data[ind]
                 self.closest_points = self.ClosestPoints(p1=new_p1, p2=None, start_index=ind)
-                return True
+                self.is_final = True
             else:
                 new_p1 = self.input_data[ind]
                 new_p2 = self.input_data[ind + 1]
-                self.closest_points = self.ClosestPoints(p1=new_p1, p2=new_p1, start_index=ind)
-                return False
+                self.closest_points = self.ClosestPoints(p1=new_p1, p2=new_p2, start_index=ind)
+                self.is_final = False
 
-    def _calculate_angles(self, vehicle_pos: np.ndarray, p1: np.ndarray, p2: Optional[np.ndarray] = None,
-                          is_final: bool = False) -> float(2):
+    def _calculate_angles(self, vehicle_pos: np.ndarray, p1: np.ndarray, p2: Optional[np.ndarray] = None) -> float(2):
         """
         Calculates the angles between the current vehicle position to the next 2 points. If only one point remains to
         be reached, the argument 'is_final' should be set to True. Only a single angle will then be returned, with the
@@ -183,15 +202,15 @@ class Simulation:
         delta_y1 = p1[1] - vehicle_pos[1]
         theta1 = np.arctan2(delta_y1, delta_x1)
         theta2 = 0
-        if not is_final:
+        if not self.is_final:
             delta_x2 = p2[0] - vehicle_pos[0]
             delta_y2 = p2[1] - vehicle_pos[1]
             theta2 = np.arctan2(delta_y2, delta_x2)
 
         return theta1, theta2
 
-    def _calculate_distances(self, vehicle_pos: np.ndarray, p1: np.ndarray, p2: Optional[np.ndarray] = None,
-                             is_final: bool = False) -> float(2):
+    def _calculate_distances(self, vehicle_pos: np.ndarray, p1: np.ndarray,
+                             p2: Optional[np.ndarray] = None, single_calc: bool = False) -> float(2):
         """
         Calculates the distances between the current vehicle position to the next 2 points. If only one point remains to
         be reached, the argument 'is_final' should be set to True. Only a single distance will then be returned,
@@ -201,19 +220,23 @@ class Simulation:
         :param p2: Coords of second closest point
         :return: Distance from vehicle and points
         """
+        # print(f"Single Calc: {single_calc}")
+        # print(f"Is Final: {self.is_final}")
         delta_x1 = p1[0] - vehicle_pos[0]
         delta_y1 = p1[1] - vehicle_pos[1]
         d1 = np.sqrt(delta_x1**2 + delta_y1**2)
         d2 = 0
-        if not is_final:
+        if single_calc:
+            return d1, d2
+        if not self.is_final:
+            # print(f"Entering second point calc")
             delta_x2 = p2[0] - vehicle_pos[0]
             delta_y2 = p2[1] - vehicle_pos[1]
             d2 = np.sqrt(delta_x2**2 + delta_y2**2)
 
         return d1, d2
 
-    def _calculate_heading_errors(self, vehicle_heading: float, theta1: float, theta2: float,
-                                  is_final: bool = False) -> float(2):
+    def _calculate_heading_errors(self, vehicle_heading: float, theta1: float, theta2: float) -> float(2):
         """
         Calculates the differences (errors) between the vehicle heading and the headings (global referenced angles)
         to the points. If only one point remains to be reached, the parameter 'is_final' should be set to 0. Only one
@@ -221,37 +244,42 @@ class Simulation:
         :param vehicle_heading: Global heading of the vehicle (radians)
         :param theta1: Global referenced angle between the vehicle and the closest point (radians)
         :param theta2: Global referenced angle between the vehicle and the second closest point (radians)
-        :param is_final: Boolean value stating whether the next point is the final point
         :return: Heading errors in radians
         """
-        theta1_error = vehicle_heading - theta1
+        theta1_error = theta1 - vehicle_heading
         theta2_error = 0.
-        if not is_final:
-            theta2_error = vehicle_heading - theta2
+        if not self.is_final:
+            theta2_error = theta2 - vehicle_heading
 
         return theta1_error, theta2_error
 
     def _get_state(self, vehicle_coords: np.ndarray, vehicle_heading: float):
 
-        is_final = self._update_closest_points(vehicle_pos=vehicle_coords)
+        self._update_closest_points(vehicle_pos=vehicle_coords)
+
+        if self.solved:
+            self.last_state = np.array([0., 0., 0., 0.])
+
         p1 = self.closest_points.p1
         p2 = self.closest_points.p2
 
-        d1, d2 = self._calculate_distances(vehicle_pos=vehicle_coords, p1=p1, p2=p2, is_final=is_final)
-        theta1, theta2 = self._calculate_angles(vehicle_pos=vehicle_coords, p1=p1, p2=p2, is_final=is_final)
+        d1, d2 = self._calculate_distances(vehicle_pos=vehicle_coords, p1=p1, p2=p2)
+        theta1, theta2 = self._calculate_angles(vehicle_pos=vehicle_coords, p1=p1, p2=p2)
         theta1_error, theta2_error = self._calculate_heading_errors(vehicle_heading=vehicle_heading, theta1=theta1,
-                                                                    theta2=theta2, is_final=is_final)
+                                                                    theta2=theta2)
 
-        return np.array([d1, d2, theta1_error, theta2_error])
+        self.last_state = np.array([d1, d2, theta1_error, theta2_error])
 
     def _calculate_reward(self, reward_type: str, state: np.ndarray) -> int:
-        # Previous distance reward system
+
+        reward = 0
 
         d1 = state[0]
         d2 = state[1]
         theta1 = state[2]
         theta2 = state[3]
 
+        # Previous distance reward system
         if reward_type == "distance":
             if self.prev_distance is not None:
                 if d1 >= self.prev_distance:
@@ -287,7 +315,14 @@ class Simulation:
             reward = 5 - abs(np.degrees(theta1))
 
         elif reward_type == "log":
-            reward = 100 * (- np.log(0.5*theta1 + np.exp(1) - np.pi/8) + 1)
+            reward = 100 * (- np.log(0.5 * abs(theta1) + np.exp(1) - np.pi/8) + 1)
+
+        elif reward_type == "penalty":
+            # Pure negative rewards
+            reward = - abs(np.degrees(theta1))
+
+        if self.waypoint_reached_in_step:
+            reward += 1000
 
         return reward
 
@@ -372,31 +407,79 @@ class Simulation:
                               self._rendering_coordinate_conversion(self._vehicle_coords), 1)
         
         # Draw textbox and text
+        # Text Heading
         text_heading = self._heading_font.render("VEHICLE DATA", True, (0, 0, 0))
         text_heading_rect = text_heading.get_rect()
         text_heading_lefttop = (self._text_box.centerx - int(round(text_heading_rect.width / 2) + 20), 50)
-
+        # Heading Label
         heading_label = self._data_font.render("VEHICLE HEADING", True, (0, 0, 0))
         heading_label_rect = heading_label.get_rect()
         heading_label_lefttop = (self._text_box.centerx - int(round(heading_label_rect.width / 2) + 20), 100)
-
+        # Heading Data
         heading_data = self._data_font.render(f"{np.degrees(vehicle_heading)}", True, (200, 10, 10))
         heading_data_rect = heading_data.get_rect()
         heading_data_lefttop = (self._text_box.centerx - int(round(heading_data_rect.width / 2) + 20), 120)
-
+        # Steering Label
         steering_label = self._data_font.render("VEHICLE STEERING ANGLE", True, (0, 0, 0))
         steering_label_rect = steering_label.get_rect()
         steering_label_lefttop = (self._text_box.centerx - int(round(steering_label_rect.width / 2 + 20)), 145)
-
+        # Steering Data
         steering_data = self._data_font.render(f"{round(np.degrees(vehicle_delta))}", True, (200, 10, 10))
         steering_data_rect = steering_data.get_rect()
         steering_data_lefttop = (self._text_box.centerx - int(round(steering_data_rect.width / 2) + 20), 165)
+        # Heading Error 1 Label
+        heading_er_1_label = self._data_font.render("HEADING ERROR TO P1", True, (0, 0, 0))
+        heading_er_1_label_rect = heading_er_1_label.get_rect()
+        heading_er_1_label_lefttop = (self._text_box.centerx - int(round(heading_er_1_label_rect.width / 2 + 20)), 190)
+        # Heading Error 1 Data
+        heading_er_1_data = self._data_font.render(f"{round(np.degrees(self.last_state[2]))}", True, (200, 10, 10))
+        heading_er_1_data_rect = heading_er_1_data.get_rect()
+        heading_er_1_data_lefttop = (self._text_box.centerx - int(round(heading_er_1_data_rect.width / 2) + 20), 210)
+        # Heading Error 2 Label
+        heading_er_2_label = self._data_font.render("HEADING ERROR TO P2", True, (0, 0, 0))
+        heading_er_2_label_rect = heading_er_2_label.get_rect()
+        heading_er_2_label_lefttop = (self._text_box.centerx - int(round(heading_er_2_label_rect.width / 2 + 20)), 235)
+        # Heading Error 2 Data
+        heading_er_2_data = self._data_font.render(f"{round(np.degrees(self.last_state[3]))}", True, (200, 10, 10))
+        heading_er_2_data_rect = heading_er_2_data.get_rect()
+        heading_er_2_data_lefttop = (self._text_box.centerx - int(round(heading_er_2_data_rect.width / 2) + 20), 255)
+        # Distance 1 Label
+        distance_1_label = self._data_font.render("DISTANCE TO P1", True, (0, 0, 0))
+        distance_1_label_rect = distance_1_label.get_rect()
+        distance_1_label_lefttop = (self._text_box.centerx - int(round(distance_1_label_rect.width / 2 + 20)), 280)
+        # Distance 1 Data
+        distance_1_data = self._data_font.render(f"{round(self.last_state[0], 2)}", True, (200, 10, 10))
+        distance_1_data_rect = distance_1_data.get_rect()
+        distance_1_data_lefttop = (self._text_box.centerx - int(round(distance_1_data_rect.width / 2) + 20), 300)
+        # Distance 2 Label
+        distance_2_label = self._data_font.render("DISTANCE TO P2", True, (0, 0, 0))
+        distance_2_label_rect = distance_2_label.get_rect()
+        distance_2_label_lefttop = (self._text_box.centerx - int(round(distance_2_label_rect.width / 2 + 20)), 325)
+        # Distance 2 Data
+        distance_2_data = self._data_font.render(f"{round(self.last_state[1], 2)}", True, (200, 10, 10))
+        distance_2_data_rect = distance_2_data.get_rect()
+        distance_2_data_lefttop = (self._text_box.centerx - int(round(distance_2_data_rect.width / 2) + 20), 345)
 
         self._screen.blit(text_heading, text_heading_lefttop)
+
         self._screen.blit(heading_label, heading_label_lefttop)
         self._screen.blit(heading_data, heading_data_lefttop)
+
         self._screen.blit(steering_label, steering_label_lefttop)
         self._screen.blit(steering_data, steering_data_lefttop)
+
+        self._screen.blit(heading_er_1_label, heading_er_1_label_lefttop)
+        self._screen.blit(heading_er_1_data, heading_er_1_data_lefttop)
+
+        self._screen.blit(heading_er_2_label, heading_er_2_label_lefttop)
+        self._screen.blit(heading_er_2_data, heading_er_2_data_lefttop)
+
+        self._screen.blit(distance_1_label, distance_1_label_lefttop)
+        self._screen.blit(distance_1_data, distance_1_data_lefttop)
+
+        self._screen.blit(distance_2_label, distance_2_label_lefttop)
+        self._screen.blit(distance_2_data, distance_2_data_lefttop)
+
         pygame.draw.rect(self._screen, (0, 0, 0), self._text_box, 1)
             
             
@@ -404,7 +487,7 @@ class Simulation:
 # -------------------------------------------RUN AND RENDER FUNCTIONS------------------------------------------------- #
 ########################################################################################################################
     # @jit()
-    def step(self, step_type: str, input: Optional = None, speed: float = None):
+    def step(self, step_type: str = "action", input: Optional = None, speed: float = None):
 
         if self.terminal:
             logging.error("Terminal state has been reached. Please call sim.reset() in order to restart the simulation")
@@ -414,52 +497,99 @@ class Simulation:
             return None
 
         if step_type == "action":
-            # Actions are encoded as 0 = Left and 1 = Right
+            # Actions are encoded as:
+            # 0 = 20 degrees left
+            # 1 = 15 degrees left
+            # 2 = 10 degrees left
+            # 3 = 5 degrees left
+            # 4 = 0 degrees
+            # 5 = 5 degrees right
+            # 6 = 10 degrees right
+            # 7 = 15 degrees right
+            # 8 = 20 degrees right
+
             if input == 0:
-                angle = self.vehicle.delta - np.radians(1)
+                inc = (20 - np.degrees(self.vehicle.delta)) / 10
             elif input == 1:
-                angle = self.vehicle.delta + np.radians(1)
+                inc = (15 - np.degrees(self.vehicle.delta)) / 10
+            elif input == 2:
+                inc = (10 - np.degrees(self.vehicle.delta)) / 10
+            elif input == 3:
+                inc = (5 - np.degrees(self.vehicle.delta)) / 10
+            elif input == 4:
+                inc = (0 - np.degrees(self.vehicle.delta)) / 10
+            elif input == 5:
+                inc = (- 5 - np.degrees(self.vehicle.delta)) / 10
+            elif input == 6:
+                inc = (- 10 - np.degrees(self.vehicle.delta)) / 10
+            elif input == 7:
+                inc = (- 15 - np.degrees(self.vehicle.delta)) / 10
+            elif input == 8:
+                inc = (- 20 - np.degrees(self.vehicle.delta)) / 10
+
+            # OLD IMPLEMENTATION
+            # if input == 0:
+            #     angle = self.vehicle.delta - np.radians(1)
+            # elif input == 1:
+            #     angle = self.vehicle.delta + np.radians(1)
+
             else:
                 logging.error("Invalid action")
                 return None
+
         elif step_type == "steer":
             angle = input
         else:
             logging.error("Parameters must contain either steering_angle or action")
             return None
 
-        vehicle_status = self.vehicle.drive(angle, speed)
-        vehicle_coords = vehicle_status[0:2]
-        self._vehicle_coords.append(vehicle_coords)
-        vehicle_heading = vehicle_status[2]
+        for iteration in range(self.iterations_per_step):
+            if iteration < 10:
+                angle = self.vehicle.delta + np.radians(inc)
+            else:
+                angle = self.vehicle.delta
+            # print(f"Step {iteration}")
+            vehicle_status = self.vehicle.drive(angle, speed)
+            vehicle_coords = vehicle_status[0:2]
+            self._vehicle_coords.append(vehicle_coords)
+            # print(f"Vehicle status: {vehicle_status}")
+            vehicle_heading = vehicle_status[2]
+            self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
+            self.run_time += self.dt
 
-        state = self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
+            end_condition = ""
 
-        self.run_time += self.dt
+            if self.iterations_without_progress >= 50:
+                self.terminal = True
+                end_condition = "No progress"
+                break
 
-        reward = self._calculate_reward(reward_type="log", state=state)
+            if self.run_time >= self.timeout:
+                self.terminal = True
+                end_condition = "Timeout"
+                break
 
-        end_condition = ""
+            if abs(self.last_state[2]) >= np.radians(120):
+                self.terminal = True
+                end_condition = "Error exceeded 90 degrees"
+                break
 
-        if self.iterations_without_progress >= 50:
-            self.terminal = True
-            end_condition = "No progress"
+        reward = self._calculate_reward(reward_type="penalty", state=self.last_state)
 
-        if self.run_time >= self.timeout:
-            self.terminal = True
-            end_condition = "Timeout"
+        # if self.terminal:
+        #     reward = -100
+            
+        self.results.append([self.current_run, self.last_state, reward, self.points_reached, self.terminal,
+                             self.run_time, end_condition])
 
-        if abs(state[2]) >= np.radians(90):
-            self.terminal = True
-            end_condition = "Error exceeded 90 degrees"
-
-        return self.StepReturn(state=state, reward=reward, progress=self.points_reached, terminal=self.terminal,
-                               run_time=self.run_time, end_condition=end_condition)
+        return self.StepReturn(state=self.last_state, reward=reward, progress=self.points_reached,
+                               terminal=self.terminal, run_time=self.run_time, end_condition=end_condition)
 
     def _run_steering(self) -> pd.DataFrame:
         for angle in self.input_data:
-            self.vehicle.drive(steering_angle=angle)
-            self.run_time += self.dt
+            for step in range(self.iterations_per_step):
+                self.vehicle.drive(steering_angle=angle)
+                self.run_time += self.dt
 
         return self.vehicle.parameter_history()
 
@@ -492,8 +622,8 @@ class Simulation:
 
         # Draw vehicle steering angle
         # First calculates scaled angle
-        x = np.cos(vehicle_delta)
-        y = np.sin(vehicle_delta)
+        x = np.cos(vehicle_status[2] + vehicle_delta)
+        y = np.sin(vehicle_status[2] + vehicle_delta)
         delta_prime = np.arctan2(y * self._scaling_factor, x * self._scaling_factor)
 
         end = [vehicle_pos[0] + round(25 * np.cos(delta_prime)), vehicle_pos[1] - round(25 * np.sin(delta_prime))]
@@ -531,3 +661,11 @@ class Simulation:
                             f"{slip_angle_exceeded} times")
             logging.warning(f"\tThe maximum steering angle input exceeded the maximum allowable angle "
                             f"{steering_angle_exceeded} times")
+            
+    def log_data(self, file_name: str):
+        # vehicle_data = self.vehicle.parameter_history()
+        # tyre_data = self.vehicle.tyre.parameter_history()
+        simulation_data = pd.DataFrame(self.results, columns=["Run", "State", "Reward", "Points Reached",
+                                                              "Terminal", "Run Time", "End Condition"])
+
+        simulation_data.to_csv(f"./Results/{file_name}.csv", sep=',')

@@ -5,10 +5,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 TRAINING_FILES = ["Sine_Steer.txt"]
-TIMESTEP = 0.05
+TIMESTEP = 0.001
+ITERATIONS_PER_TIMESTEP = 500
 
 
-def read_data(file_name:str):
+def read_data(file_name: str):
     file_data = []
     with open(f"SampleInputData/{file_name}", "r") as file:
         for line in file:
@@ -25,24 +26,32 @@ if __name__ == "__main__":
     tyre_model = LinearTyre()
     vehicle = Vehicle(tyre_model=tyre_model, dt=TIMESTEP)
     simulation = Simulation(sim_name="Training1", vehicle=vehicle, input_type="path", input_data=data,
-                            timestep=TIMESTEP, timeout=50., waypoint_threshold=0.5)
-
+                            timestep=TIMESTEP, timeout=50., iterations_per_step=ITERATIONS_PER_TIMESTEP,
+                            waypoint_threshold=0.5)
+    front_slip = []
+    rear_slip = []
     vehicle_x = []
     vehicle_y = []
     vehicle_theta = []
 
-    for steering in data:
-        print(f"Steering angle : {steering[1]} degrees")
-        stats = vehicle.drive(steering_angle=np.radians(steering[1]))
-        vehicle_x.append(stats[0])
-        vehicle_y.append(stats[1])
-        vehicle_theta.append(stats[2])
+    # for steering in data:
+    #     print(f"Steering angle : {steering[1]} degrees")
+    #     for i in range(ITERATIONS_PER_TIMESTEP):
+    #         stats = vehicle.drive(steering_angle=np.radians(steering[1]))
+    #         vehicle_x.append(stats[0])
+    #         vehicle_y.append(stats[1])
+    #         vehicle_theta.append(stats[2])
+
+    # Straight Line Driving
+    for i in range(10):
+        vehicle.drive(steering_angle=0, drive_time=1)
 
     params = vehicle.parameter_history()
+    print(params["x"])
 
     fig, (ax1, ax2) = plt.subplots(2)
     # fig.suptitle('Vertically stacked subplots')
-    plt.subplots_adjust(hspace = 0.5)
+    plt.subplots_adjust(hspace=0.5)
 
     ax1.plot(params["Time"], params["Delta"], label="Vehicle Steering Angle")
     ax1.plot(params["Time"], params["Theta"], label="Vehicle Heading")
@@ -66,5 +75,24 @@ if __name__ == "__main__":
     plt.ylabel("Force [N]")
     plt.legend()
     plt.title("Tyre Force Generation for Sine Steering Input")
+    plt.legend()
+    plt.show()
+
+    fig = plt.figure()
+    plt.plot(params["Time"], params["Slip Front"], label="Front Tyre")
+    plt.plot(params["Time"], params["Slip Rear"], label="Rear Tyre")
+    plt.xlabel("Time [s]")
+    plt.ylabel("Slip [rad]")
+    plt.legend()
+    plt.title("Tyre Slip Angles for Sine Steering Input")
+    plt.legend()
+    plt.show()
+
+    fig = plt.figure()
+    plt.plot(params["x"], params["y"], label="Vehicle Pos")
+    plt.xlabel("X [m]")
+    plt.ylabel("Y [m]")
+    plt.legend()
+    plt.title("Vehicle Position")
     plt.legend()
     plt.show()

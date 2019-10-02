@@ -273,37 +273,39 @@ class Vehicle:
         self.logging_time += end_logging-end_run
         self.run_time += end_run - start
 
-    def drive(self, steering_angle: float, speed: Optional[float] = None, dt_override: float = None):
-
-        if dt_override is not None:
-            self.dt = dt_override
+    def drive(self, steering_angle: float, drive_time: float, speed: Optional[float] = None):
 
         if speed is not None:
             self.V = speed
 
-        self._calculate_all(steering_angle=steering_angle)
+        elapsed_time = 0
 
-        # Global heading change
-        self.global_theta += self.theta
+        while elapsed_time < drive_time:
+            self._calculate_all(steering_angle=steering_angle)
 
-        # Longitudinal Velocity
-        delta_x_v = self.V * np.cos(self.beta) * self.dt * np.cos(self.global_theta)
-        delta_y_v = self.V * np.cos(self.beta) * self.dt * np.sin(self.global_theta)
+            # Global heading change
+            self.global_theta += self.theta
 
-        # Global position changes
+            # Longitudinal Velocity
+            delta_x_v = self.V * np.cos(self.beta) * self.dt * np.cos(self.global_theta)
+            delta_y_v = self.V * np.cos(self.beta) * self.dt * np.sin(self.global_theta)
 
-        self.global_x += delta_x_v + self.y_delta * np.cos(self.global_theta + np.pi/2)
-        self.global_y += delta_y_v + self.y_delta * np.sin(self.global_theta + np.pi/2)
+            # Global position changes
 
-        self.timestamp += self.dt
+            self.global_x += delta_x_v + self.y_delta * np.cos(self.global_theta + np.pi/2)
+            self.global_y += delta_y_v + self.y_delta * np.sin(self.global_theta + np.pi/2)
 
-        current_iteration_data = [self.timestamp, self.global_x, self.global_y, self.global_theta, self.delta,
-                                  self.beta, self.r, self.slip_front, self.slip_rear, self.force_front, self.force_rear]
-        # print(current_iteration_data)
-        if np.isnan(current_iteration_data).any():
-            logging.error("NaN value detected in current iteration.")
+            self.timestamp += self.dt
 
-        self.data_list.append(current_iteration_data)
+            current_iteration_data = [self.timestamp, self.global_x, self.global_y, self.global_theta, self.delta,
+                                      self.beta, self.r, self.slip_front, self.slip_rear, self.force_front, self.force_rear]
+            # print(current_iteration_data)
+            if np.isnan(current_iteration_data).any():
+                logging.error("NaN value detected in current iteration.")
+
+            self.data_list.append(current_iteration_data)
+
+            elapsed_time += self.dt
 
         return self.get_status()
 
