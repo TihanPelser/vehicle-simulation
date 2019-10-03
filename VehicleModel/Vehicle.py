@@ -217,12 +217,12 @@ class Vehicle:
         if np.degrees(delta) > self.max_steering_angle:
             # logging.warning("Steering input exceeds steering limit. Applied steering will be limited.")
             self.exceeded_steering_angle_max_count += 1
-            self.delta = np.radians(self.max_steering_angle)
+            self.delta = np.deg2rad(self.max_steering_angle)
 
         elif np.degrees(delta) < - self.max_steering_angle:
             # logging.warning("Steering input exceeds steering limit. Applied steering will be limited.")
             self.exceeded_steering_angle_max_count += 1
-            self.delta = - np.radians(self.max_steering_angle)
+            self.delta = - np.deg2rad(self.max_steering_angle)
         else:
             self.delta = delta
 

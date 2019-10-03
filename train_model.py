@@ -64,7 +64,8 @@ if __name__ == "__main__":
     tyre_model = LinearTyre()
     vehicle = Vehicle(tyre_model=tyre_model, dt=TIMESTEP)
     simulation = Simulation(sim_name="Training1", vehicle=vehicle, input_type="path", input_data=data,
-                            timestep=TIMESTEP, timeout=50., iterations_per_step=50, waypoint_threshold=0.5)
+                            timestep=TIMESTEP, timeout=50., iterations_per_step=100, waypoint_threshold=0.5,
+                            distance_between_points=5.)
     score_logger = ScoreLogger("Training1")
     observation_space = 4
     action_space = 9
@@ -100,7 +101,7 @@ if __name__ == "__main__":
             while True:
 
                 step += 1
-                simulation.render()
+                # simulation.render()
                 action = dqn.act(state)
                 # state_next, reward, points_reached, terminal, time = simulation.step(step_type="action", input=action)
                 step_time_taken = time.time()

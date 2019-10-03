@@ -17,7 +17,8 @@ class Simulation:
 
     # CUSTOM DATA TYPES
     #  NamedTuple to save initial setup state for reset
-    Initial = namedtuple("Initial", "name input_type input_data dt timeout debug iterations_per_step waypoint_threshold")
+    Initial = namedtuple("Initial", "name input_type input_data dt timeout debug iterations_per_step "
+                                    "waypoint_threshold distance_between_points")
     StepReturn = namedtuple("StepReturn", "state reward progress terminal run_time end_condition")
     #  NamedTuple to save closest points and index of closest point in all points
     ClosestPoints = namedtuple("ClosestPoints", "p1 p2 start_index")
@@ -50,6 +51,7 @@ class Simulation:
     waypoint_reached_in_step: bool
     current_run: int
     iterations_per_step: int
+    distance_between_points: float
     last_state: np.ndarray
 
     style.use('fast')
@@ -76,12 +78,14 @@ class Simulation:
 ########################################################################################################################
 
     def __init__(self, sim_name: str, vehicle: Vehicle,  input_type: str, input_data: np.ndarray, timestep: float,
-                 timeout: float, iterations_per_step: int, waypoint_threshold: float = 0.5, debug: bool = True):
+                 timeout: float, iterations_per_step: int, distance_between_points: float,
+                 waypoint_threshold: float = 0.5, debug: bool = True):
         try:
             self.vehicle = vehicle
             self.initial = self.Initial(name=sim_name, input_type=input_type, input_data=input_data, dt=timestep,
                                         timeout=timeout, debug=debug, iterations_per_step=iterations_per_step,
-                                        waypoint_threshold=waypoint_threshold)
+                                        waypoint_threshold=waypoint_threshold,
+                                        distance_between_points=distance_between_points)
             self.episode = 0
             self.points_reached = 0
             self.has_been_reset = False
@@ -112,6 +116,7 @@ class Simulation:
         self.debug = self.initial.debug
         self.iterations_per_step = self.initial.iterations_per_step
         self.waypoint_threshold = self.initial.waypoint_threshold
+        self.distance_between_points = self.initial.distance_between_points
         self.run_time = 0.
         self.results = []
 
@@ -120,7 +125,7 @@ class Simulation:
         base_name = f"{name}_{t}"
         self.simulation_name = f"{base_name}_{self.episode}"
 
-        self.closest_points = self.ClosestPoints(p1=self.input_data[0], p2= self.input_data[1], start_index=0)
+        self.closest_points = self.ClosestPoints(p1=self.input_data[0], p2=self.input_data[1], start_index=0)
         self.number_of_points = len(self.input_data)
 
         self.prev_distance = None
@@ -267,8 +272,10 @@ class Simulation:
         theta1, theta2 = self._calculate_angles(vehicle_pos=vehicle_coords, p1=p1, p2=p2)
         theta1_error, theta2_error = self._calculate_heading_errors(vehicle_heading=vehicle_heading, theta1=theta1,
                                                                     theta2=theta2)
+        normalised_d1 = d1 / self.distance_between_points
+        normalised_d2 = d2 / self.distance_between_points
 
-        self.last_state = np.array([d1, d2, theta1_error, theta2_error])
+        self.last_state = np.array([normalised_d1, normalised_d2, theta1_error, theta2_error])
 
     def _calculate_reward(self, reward_type: str, state: np.ndarray) -> int:
 
@@ -481,13 +488,13 @@ class Simulation:
         self._screen.blit(distance_2_data, distance_2_data_lefttop)
 
         pygame.draw.rect(self._screen, (0, 0, 0), self._text_box, 1)
-            
-            
+
 ########################################################################################################################
 # -------------------------------------------RUN AND RENDER FUNCTIONS------------------------------------------------- #
 ########################################################################################################################
+
     # @jit()
-    def step(self, action: int, speed: float = None):
+    def step(self, action: int):
         # TODO: Fix step function to iterate a few times before returning
         if self.terminal:
             logging.error("Terminal state has been reached. Please call sim.reset() in order to restart the simulation")
@@ -535,28 +542,39 @@ class Simulation:
             logging.error("Invalid action")
             return None
 
-        steer_angle = np.deg2rad(steer_angle)
-        vehicle_status = self.vehicle.drive(steering_angle=steer_angle)
-        vehicle_coords = vehicle_status[0:2]
-        self._vehicle_coords.append(vehicle_coords)
-        # print(f"Vehicle status: {vehicle_status}")
-        vehicle_heading = vehicle_status[2]
-        self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
-        self.run_time += self.dt
+        angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta)/10
 
-        end_condition = ""
+        for iteration in range(self.iterations_per_step):
+            if iteration < 10:
+                angle = self.vehicle.delta + angle_increment
+            else:
+                angle = self.vehicle.delta
 
-        if self.iterations_without_progress >= 50:
-            self.terminal = True
-            end_condition = "No progress"
+            steer_angle = np.deg2rad(steer_angle)
+            vehicle_status = self.vehicle.drive(steering_angle=angle)
+            vehicle_coords = vehicle_status[0:2]
+            self._vehicle_coords.append(vehicle_coords)
+            # print(f"Vehicle status: {vehicle_status}")
+            vehicle_heading = vehicle_status[2]
+            self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
+            self.run_time += self.dt
 
-        if self.run_time >= self.timeout:
-            self.terminal = True
-            end_condition = "Timeout"
+            end_condition = ""
 
-        if abs(self.last_state[2]) >= np.radians(120):
-            self.terminal = True
-            end_condition = "Error exceeded 90 degrees"
+            if self.iterations_without_progress >= 50:
+                self.terminal = True
+                end_condition = "No progress"
+                break
+
+            if self.run_time >= self.timeout:
+                self.terminal = True
+                end_condition = "Timeout"
+                break
+
+            if abs(self.last_state[2]) >= np.radians(120):
+                self.terminal = True
+                end_condition = "Error exceeded 90 degrees"
+                break
 
         reward = self._calculate_reward(reward_type="penalty", state=self.last_state)
 
