@@ -1,6 +1,6 @@
-from VehicleModel.Vehicle import Vehicle
+from VehicleModel.KinematicModel import KinematicVehicleModel
+from VehicleModel.DynamicModel import DynamicVehicleModel
 from Controller.DQNController import DQNController
-from matplotlib import style
 import pandas as pd
 import numpy as np
 import logging
@@ -9,22 +9,17 @@ from collections import namedtuple
 import time
 import pygame
 import sys
-from numba import jit
 
 
 class Simulation:
-    # logging.basicConfig(format='%(levelname)s-%(message)s')
 
     # CUSTOM DATA TYPES
     #  NamedTuple to save initial setup state for reset
-    Initial = namedtuple("Initial", "name input_type input_data dt timeout debug iterations_per_step "
-                                    "waypoint_threshold distance_between_points")
+    Initial = namedtuple("Initial", "name input_data dt timeout iterations_per_step "
+                                    "way_point_threshold distance_between_points")
     StepReturn = namedtuple("StepReturn", "state reward progress terminal run_time end_condition")
     #  NamedTuple to save closest points and index of closest point in all points
     ClosestPoints = namedtuple("ClosestPoints", "p1 p2 start_index")
-
-    controller: DQNController
-    vehicle: Vehicle
 
     _vehicle_coords: List = []
 
@@ -34,7 +29,7 @@ class Simulation:
     timeout: float
     input_type: str
     input_data: np.ndarray
-    waypoint_threshold: float
+    way_point_threshold: float
     episode: int
     simulation_name: str
     run_time: float
@@ -48,13 +43,11 @@ class Simulation:
     terminal: bool
     solved: bool
     is_final: bool
-    waypoint_reached_in_step: bool
+    way_point_reached_in_step: bool
     current_run: int
     iterations_per_step: int
     distance_between_points: float
     last_state: np.ndarray
-
-    style.use('fast')
 
     # PyGame Settings
     SIZE = 1280, 720
@@ -68,7 +61,7 @@ class Simulation:
     _data_font: Optional[pygame.font.Font]
     _heading_font: Optional[pygame.font.Font]
     _text_box: Optional[pygame.Rect]
-    _waypoint_render_radius: Optional[int]
+    _way_point_render_radius: Optional[int]
 
     # fig = plt.figure()
     # ax1 = fig.add_subplot(1, 1, 1)
@@ -77,33 +70,24 @@ class Simulation:
 # ----------------------------------------------SETUP FUNCTIONS------------------------------------------------------- #
 ########################################################################################################################
 
-    def __init__(self, sim_name: str, vehicle: Vehicle,  input_type: str, input_data: np.ndarray, timestep: float,
-                 timeout: float, iterations_per_step: int, distance_between_points: float,
-                 waypoint_threshold: float = 0.5, debug: bool = True):
-        try:
-            self.vehicle = vehicle
-            self.initial = self.Initial(name=sim_name, input_type=input_type, input_data=input_data, dt=timestep,
-                                        timeout=timeout, debug=debug, iterations_per_step=iterations_per_step,
-                                        waypoint_threshold=waypoint_threshold,
-                                        distance_between_points=distance_between_points)
-            self.episode = 0
-            self.points_reached = 0
-            self.has_been_reset = False
-            self.current_run = 0
-            pygame.init()
+    def __init__(self, sim_name: str, vehicle: Optional[KinematicVehicleModel],
+                 input_data: np.ndarray, time_step: float, timeout: float, iterations_per_step: int,
+                 distance_between_points: float, way_point_threshold: float = 0.5):
+        self.vehicle = vehicle
+        self.initial = self.Initial(name=sim_name, input_data=input_data, dt=time_step,
+                                    timeout=timeout, iterations_per_step=iterations_per_step,
+                                    way_point_threshold=way_point_threshold,
+                                    distance_between_points=distance_between_points)
+        self.episode = 0
+        self.points_reached = 0
+        self.has_been_reset = False
+        self.current_run = 0
+        pygame.init()
 
-            print("Sim created...")
-            print(f"Number of Waypoints: {len(input_data)}")
+        print("Sim created...")
+        print(f"Number of Waypoints: {len(input_data)}")
 
-            # self.reset()
-
-        except KeyError as e:
-            logging.error("Config file missing/incorrect")
-            print("Key Error")
-            logging.error(e)
-            exit(1)
-
-    def reset(self, save_data: bool = False):
+    def reset(self):
         self.has_been_reset = True
         self.episode += 1
         self.points_reached = 0
@@ -111,21 +95,20 @@ class Simulation:
 
         self.dt = self.initial.dt
         self.timeout = self.initial.timeout
-        self.input_type = self.initial.input_type
         self.input_data = self.initial.input_data
-        self.debug = self.initial.debug
         self.iterations_per_step = self.initial.iterations_per_step
-        self.waypoint_threshold = self.initial.waypoint_threshold
+        self.way_point_threshold = self.initial.way_point_threshold
         self.distance_between_points = self.initial.distance_between_points
         self.run_time = 0.
         self.results = []
 
+        # Sim name
         name = self.initial.name
         t = time.strftime("%H-%M-%S", time.gmtime())
         base_name = f"{name}_{t}"
         self.simulation_name = f"{base_name}_{self.episode}"
 
-        self.closest_points = self.ClosestPoints(p1=self.input_data[0], p2=self.input_data[1], start_index=0)
+        self.closest_points = self.ClosestPoints(p1=self.input_data[1], p2=self.input_data[2], start_index=1)
         self.number_of_points = len(self.input_data)
 
         self.prev_distance = None
@@ -134,13 +117,9 @@ class Simulation:
         self.terminal = False
         self.solved = False
         self.is_final = False
-        self.waypoint_reached_in_step = False
+        self.way_point_reached_in_step = False
         self.current_run += 1
-
-        if save_data:
-            self.vehicle.reset(save_name=f"{self.simulation_name}")
-        else:
-            self.vehicle.reset()
+        self.vehicle.reset()
 
         vehicle_status = self.vehicle.get_status()
         vehicle_coords = vehicle_status[0:2]
@@ -156,9 +135,17 @@ class Simulation:
         self._data_font = None
         self._text_box = None
         self._vehicle_sprite_angle = None
-        self._waypoint_render_radius = None
+        self._way_point_render_radius = None
 
         return self.last_state
+
+    def _set_vehicle_position(self):
+        x = self.input_data[0][0]
+        y = self.input_data[0][1]
+        delta_x = self.closest_points.p1[0] - x
+        delta_y = self.closest_points.p1[1] - y
+        heading = np.arctan2(delta_y, delta_x)
+        self.vehicle.set_position(x, y, heading)
 
 ########################################################################################################################
 # -------------------------------------------CALCULATION FUNCTIONS---------------------------------------------------- #
@@ -170,12 +157,12 @@ class Simulation:
         :param vehicle_pos: Global position of the vehicle
         :return: Bool stating whether the next closest point is the final point
         """
-        self.waypoint_reached_in_step = False
+        self.way_point_reached_in_step = False
         p1 = self.closest_points.p1
-        d1 = self._calculate_distances(vehicle_pos=vehicle_pos, p1=p1, single_calc=True)[0]
+        d1, _ = self._calculate_distances(vehicle_pos=vehicle_pos, p1=p1, single_calc=True)
 
-        if d1 <= self.waypoint_threshold:
-            self.waypoint_reached_in_step = True
+        if d1 <= self.way_point_threshold:
+            self.way_point_reached_in_step = True
             ind = self.closest_points.start_index + 1
             self.points_reached += 1
             if self.is_final:
@@ -217,9 +204,7 @@ class Simulation:
     def _calculate_distances(self, vehicle_pos: np.ndarray, p1: np.ndarray,
                              p2: Optional[np.ndarray] = None, single_calc: bool = False) -> float(2):
         """
-        Calculates the distances between the current vehicle position to the next 2 points. If only one point remains to
-        be reached, the argument 'is_final' should be set to True. Only a single distance will then be returned,
-        with the second distance returned as 0
+        Calculates the distances between the current vehicle position to the next 2 points.
         :param vehicle_pos: Coords of vehicle
         :param p1: Coords of closest point
         :param p2: Coords of second closest point
@@ -229,7 +214,7 @@ class Simulation:
         # print(f"Is Final: {self.is_final}")
         delta_x1 = p1[0] - vehicle_pos[0]
         delta_y1 = p1[1] - vehicle_pos[1]
-        d1 = np.sqrt(delta_x1**2 + delta_y1**2)
+        d1 = np.sqrt(delta_x1 ** 2 + delta_y1 ** 2)
         d2 = 0
         if single_calc:
             return d1, d2
@@ -237,7 +222,7 @@ class Simulation:
             # print(f"Entering second point calc")
             delta_x2 = p2[0] - vehicle_pos[0]
             delta_y2 = p2[1] - vehicle_pos[1]
-            d2 = np.sqrt(delta_x2**2 + delta_y2**2)
+            d2 = np.sqrt(delta_x2 ** 2 + delta_y2 ** 2)
 
         return d1, d2
 
@@ -272,19 +257,31 @@ class Simulation:
         theta1, theta2 = self._calculate_angles(vehicle_pos=vehicle_coords, p1=p1, p2=p2)
         theta1_error, theta2_error = self._calculate_heading_errors(vehicle_heading=vehicle_heading, theta1=theta1,
                                                                     theta2=theta2)
+        # Normalise distance
         normalised_d1 = d1 / self.distance_between_points
-        normalised_d2 = d2 / self.distance_between_points
+        normalised_d2 = d2 / self.distance_between_points * 2
 
-        self.last_state = np.array([normalised_d1, normalised_d2, theta1_error, theta2_error])
+        # Inverse Method
+        # inverse_angle_1 = np.sign(theta1_error) * (np.deg2rad(120) - abs(theta1_error))
+        # inverse_angle_2 = np.sign(theta2_error) * (np.deg2rad(120) - abs(theta2_error))
 
-    def _calculate_reward(self, reward_type: str, state: np.ndarray) -> int:
+        inverse_d1 = 1 - normalised_d1
+        inverse_d2 = 1 - normalised_d2
+
+        # self.last_state = np.array([normalised_d1, normalised_d2, theta1_error, theta2_error])
+
+        # State consists of inverse, normalised distances and heading errors
+        self.last_state = np.array([inverse_d1, inverse_d2, np.rad2deg(theta1_error), np.rad2deg(theta2_error),
+                                    np.rad2deg(vehicle_heading)])
+
+    def _calculate_reward(self, reward_type: str, ) -> int:
 
         reward = 0
 
-        d1 = state[0]
-        d2 = state[1]
-        theta1 = state[2]
-        theta2 = state[3]
+        d1 = self.last_state[0]
+        d2 = self.last_state[1]
+        theta1 = self.last_state[2]
+        theta2 = self.last_state[3]
 
         # Previous distance reward system
         if reward_type == "distance":
@@ -322,17 +319,150 @@ class Simulation:
             reward = 5 - abs(np.degrees(theta1))
 
         elif reward_type == "log":
-            reward = 100 * (- np.log(0.5 * abs(theta1) + np.exp(1) - np.pi/8) + 1)
+            reward = 100 * (- np.log(0.5 * abs(theta1) + np.exp(1) - np.pi / 8) + 1)
 
         elif reward_type == "penalty":
             # Pure negative rewards
-            reward = - abs(np.degrees(theta1))
+            reward = - abs(np.rad2deg(theta1))
 
-        if self.waypoint_reached_in_step:
-            reward += 1000
+        elif reward_type == "inverse_penalty":
+            # Pure negative rewards
+            # To be used when 'inverse' states are used
+            reward = - (120 - abs(np.rad2deg(theta1)))
+
+        elif reward_type == "point_reached":
+            if self.way_point_reached_in_step:
+                reward = 100
+            else:
+                reward = 0
+
+        if self.way_point_reached_in_step:
+            reward += 100
 
         return reward
 
+########################################################################################################################
+# -------------------------------------------RUN AND RENDER FUNCTIONS------------------------------------------------- #
+########################################################################################################################
+
+    # @jit()
+    def step(self, action: int):
+        # TODO: Fix step function to iterate a few times before returning
+        if self.terminal:
+            logging.error("Terminal state has been reached. Please call sim.reset() in order to restart the simulation")
+            return None
+        if not self.has_been_reset:
+            logging.error("Please call .reset() before calling .step()")
+            return None
+
+        # Actions are encoded as:
+        # 0 = +10 degrees left
+        # 1 = +5 degrees left
+        # 2 = +3 degrees left
+        # 3 = +1 degrees left
+        # 4 = 0 degrees
+        # 5 = +1 degrees right
+        # 6 = +3 degrees right
+        # 7 = +5 degrees right
+        # 8 = *10 degrees right
+
+        if action == 0:
+            steer_angle = 10
+        elif action == 1:
+            steer_angle = 5
+        elif action == 2:
+            steer_angle = 3
+        elif action == 3:
+            steer_angle = 1
+        elif action == 4:
+            steer_angle = 0
+        elif action == 5:
+            steer_angle = -1
+        elif action == 6:
+            steer_angle = -3
+        elif action == 7:
+            steer_angle = -5
+        elif action == 8:
+            steer_angle = -10
+
+        else:
+            print("Invalid action")
+            return None
+
+        # angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta)/10
+        angle_increment = np.deg2rad(steer_angle / 10)
+        set_angle = self.vehicle.delta
+        for iteration in range(self.iterations_per_step):
+            if iteration < 10:
+                set_angle += angle_increment
+
+            vehicle_status = self.vehicle.drive(steering_angle=set_angle)
+            vehicle_coords = vehicle_status[0:2]
+            self._vehicle_coords.append(vehicle_coords)
+            # print(f"Vehicle status: {vehicle_status}")
+            vehicle_heading = vehicle_status[2]
+            self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
+            self.run_time += self.dt
+
+            end_condition = ""
+
+            if self.iterations_without_progress >= 500:
+                self.terminal = True
+                end_condition = "No progress"
+                break
+
+            if self.run_time >= self.timeout:
+                self.terminal = True
+                end_condition = "Timeout"
+                break
+
+            if abs(self.last_state[2]) >= np.deg2rad(120):
+                self.terminal = True
+                end_condition = "Error exceeded 120 degrees"
+                break
+
+        reward = self._calculate_reward(reward_type="penalty")
+
+        if self.terminal:
+            reward -= 1000
+
+        self.results.append([self.current_run, self.last_state, reward, self.points_reached, self.terminal,
+                             self.run_time, end_condition])
+
+        return self.StepReturn(state=self.last_state, reward=reward, progress=self.points_reached,
+                               terminal=self.terminal, run_time=self.run_time, end_condition=end_condition)
+
+########################################################################################################################
+# -------------------------------------LOGGING AND RENDERING FUNCTIONS------------------------------------------------ #
+########################################################################################################################
+
+    def log_error_information(self):
+        slip_angle_exceeded = self.vehicle.tyre.exceeded_slip_angle_max_count
+        steering_angle_exceeded = self.vehicle.exceeded_steering_angle_max_count
+
+        if self.debug:
+            with open(f"Results/debug/{self.simulation_name}.txt", "w+") as log:
+                log.write("During simulation the following errors/warnings occurred:\n")
+                log.write(f"\tThe calculated slip angle exceed the maximum values tested experimentally "
+                          f"{slip_angle_exceeded} times\n")
+                log.write(f"\tThe maximum steering angle input exceeded the maximum allowable angle "
+                          f"{steering_angle_exceeded} times")
+        else:
+            logging.warning("During simulation the following errors/warnings occurred:")
+            logging.warning(f"\tThe calculated slip angle exceed the maximum values tested experimentally "
+                            f"{slip_angle_exceeded} times")
+            logging.warning(f"\tThe maximum steering angle input exceeded the maximum allowable angle "
+                            f"{steering_angle_exceeded} times")
+
+    def log_data(self, file_name: str):
+        # vehicle_data = self.vehicle.parameter_history()
+        # tyre_data = self.vehicle.tyre.parameter_history()
+        simulation_data = pd.DataFrame(self.results, columns=["Run", "State", "Reward", "Points Reached",
+                                                              "Terminal", "Run Time", "End Condition"])
+
+        simulation_data.to_csv(f"./Results/{file_name}.csv", sep=',')
+
+    # RENDERING
     def _setup_rendering(self):
         x_max = np.max(self.input_data[:, 0])
         x_min = np.min(self.input_data[:, 0])
@@ -354,7 +484,7 @@ class Simulation:
         else:
             self._scaling_factor = x_scale
 
-        self._waypoint_render_radius = int(round(self.waypoint_threshold * self._scaling_factor))
+        self._way_point_render_radius = int(round(self.way_point_threshold * self._scaling_factor))
 
         # Set Origins
         data_origin = self.input_data[0]
@@ -400,19 +530,19 @@ class Simulation:
                          tuple(np.add(self._path_origin, [50, 0])), 1)
         pygame.draw.line(self._screen, (0, 0, 0), tuple(np.subtract(self._path_origin, (0, 25))),
                          tuple(np.add(self._path_origin, (0, 50))), 1)
-        
+
         # Draw Waypoints
         for point in self.input_data:
             pygame.draw.circle(self._screen, (10, 200, 10), self._rendering_coordinate_conversion(point), 2)
 
             pygame.draw.circle(self._screen, (200, 10, 10), self._rendering_coordinate_conversion(point),
-                               self._waypoint_render_radius, 1)
-            
+                               self._way_point_render_radius, 1)
+
         # Draw Vehicle Data
         if len(self._vehicle_coords) >= 2:
             pygame.draw.lines(self._screen, (0, 0, 0), False,
                               self._rendering_coordinate_conversion(self._vehicle_coords), 1)
-        
+
         # Draw textbox and text
         # Text Heading
         text_heading = self._heading_font.render("VEHICLE DATA", True, (0, 0, 0))
@@ -431,7 +561,7 @@ class Simulation:
         steering_label_rect = steering_label.get_rect()
         steering_label_lefttop = (self._text_box.centerx - int(round(steering_label_rect.width / 2 + 20)), 145)
         # Steering Data
-        steering_data = self._data_font.render(f"{round(np.degrees(vehicle_delta))}", True, (200, 10, 10))
+        steering_data = self._data_font.render(f"{round(np.rad2deg(vehicle_delta))}", True, (200, 10, 10))
         steering_data_rect = steering_data.get_rect()
         steering_data_lefttop = (self._text_box.centerx - int(round(steering_data_rect.width / 2) + 20), 165)
         # Heading Error 1 Label
@@ -489,112 +619,6 @@ class Simulation:
 
         pygame.draw.rect(self._screen, (0, 0, 0), self._text_box, 1)
 
-########################################################################################################################
-# -------------------------------------------RUN AND RENDER FUNCTIONS------------------------------------------------- #
-########################################################################################################################
-
-    # @jit()
-    def step(self, action: int):
-        # TODO: Fix step function to iterate a few times before returning
-        if self.terminal:
-            logging.error("Terminal state has been reached. Please call sim.reset() in order to restart the simulation")
-            return None
-        if not self.has_been_reset:
-            logging.error("Please call .reset() before calling .step()")
-            return None
-            # Actions are encoded as:
-            # 0 = 20 degrees left
-            # 1 = 15 degrees left
-            # 2 = 10 degrees left
-            # 3 = 5 degrees left
-            # 4 = 0 degrees
-            # 5 = 5 degrees right
-            # 6 = 10 degrees right
-            # 7 = 15 degrees right
-            # 8 = 20 degrees right
-
-        if action == 0:
-            steer_angle = 20
-        elif action == 1:
-            steer_angle = 15
-        elif action == 2:
-            steer_angle = 10
-        elif action == 3:
-            steer_angle = 5
-        elif action == 4:
-            steer_angle = 0
-        elif action == 5:
-            steer_angle = -5
-        elif action == 6:
-            steer_angle = -10
-        elif action == 7:
-            steer_angle = -15
-        elif action == 8:
-            steer_angle = -20
-
-        # OLD IMPLEMENTATION
-        # if input == 0:
-        #     angle = self.vehicle.delta - np.radians(1)
-        # elif input == 1:
-        #     angle = self.vehicle.delta + np.radians(1)
-
-        else:
-            logging.error("Invalid action")
-            return None
-
-        angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta)/10
-
-        for iteration in range(self.iterations_per_step):
-            if iteration < 10:
-                angle = self.vehicle.delta + angle_increment
-            else:
-                angle = self.vehicle.delta
-
-            steer_angle = np.deg2rad(steer_angle)
-            vehicle_status = self.vehicle.drive(steering_angle=angle)
-            vehicle_coords = vehicle_status[0:2]
-            self._vehicle_coords.append(vehicle_coords)
-            # print(f"Vehicle status: {vehicle_status}")
-            vehicle_heading = vehicle_status[2]
-            self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
-            self.run_time += self.dt
-
-            end_condition = ""
-
-            if self.iterations_without_progress >= 50:
-                self.terminal = True
-                end_condition = "No progress"
-                break
-
-            if self.run_time >= self.timeout:
-                self.terminal = True
-                end_condition = "Timeout"
-                break
-
-            if abs(self.last_state[2]) >= np.radians(120):
-                self.terminal = True
-                end_condition = "Error exceeded 90 degrees"
-                break
-
-        reward = self._calculate_reward(reward_type="penalty", state=self.last_state)
-
-        # if self.terminal:
-        #     reward = -100
-            
-        self.results.append([self.current_run, self.last_state, reward, self.points_reached, self.terminal,
-                             self.run_time, end_condition])
-
-        return self.StepReturn(state=self.last_state, reward=reward, progress=self.points_reached,
-                               terminal=self.terminal, run_time=self.run_time, end_condition=end_condition)
-
-    def _run_steering(self) -> pd.DataFrame:
-        for angle in self.input_data:
-            for step in range(self.iterations_per_step):
-                self.vehicle.drive(steering_angle=angle)
-                self.run_time += self.dt
-
-        return self.vehicle.parameter_history()
-
     def render(self):
         if self._screen is None:
             self._setup_rendering()
@@ -641,33 +665,3 @@ class Simulation:
 
         # Display everything
         pygame.display.flip()
-
-########################################################################################################################
-# -------------------------------------LOGGING AND RENDERING FUNCTIONS------------------------------------------------ #
-########################################################################################################################
-
-    def log_error_information(self):
-        slip_angle_exceeded = self.vehicle.tyre.exceeded_slip_angle_max_count
-        steering_angle_exceeded = self.vehicle.exceeded_steering_angle_max_count
-
-        if self.debug:
-            with open(f"Results/debug/{self.simulation_name}.txt", "w+") as log:
-                log.write("During simulation the following errors/warnings occurred:\n")
-                log.write(f"\tThe calculated slip angle exceed the maximum values tested experimentally "
-                          f"{slip_angle_exceeded} times\n")
-                log.write(f"\tThe maximum steering angle input exceeded the maximum allowable angle "
-                          f"{steering_angle_exceeded} times")
-        else:
-            logging.warning("During simulation the following errors/warnings occurred:")
-            logging.warning(f"\tThe calculated slip angle exceed the maximum values tested experimentally "
-                            f"{slip_angle_exceeded} times")
-            logging.warning(f"\tThe maximum steering angle input exceeded the maximum allowable angle "
-                            f"{steering_angle_exceeded} times")
-            
-    def log_data(self, file_name: str):
-        # vehicle_data = self.vehicle.parameter_history()
-        # tyre_data = self.vehicle.tyre.parameter_history()
-        simulation_data = pd.DataFrame(self.results, columns=["Run", "State", "Reward", "Points Reached",
-                                                              "Terminal", "Run Time", "End Condition"])
-
-        simulation_data.to_csv(f"./Results/{file_name}.csv", sep=',')

@@ -1,23 +1,18 @@
 from Controller.DQNController import DQNController
-from Controller.Scoring import ScoreLogger
 from Simulation.Simulation import Simulation
-from VehicleModel.Vehicle import Vehicle
-from TyreModels.LinearCutoffTyreModel import LinearTyre
+from VehicleModel.DynamicModel import DynamicVehicleModel
+from VehicleModel.KinematicModel import KinematicVehicleModel
+from TyreModel.LinearCutoff import LinearTyre
 import numpy as np
 import time
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from matplotlib import style
 
 TRAINING_FILES = ["DLC.txt", "Sine.txt"]
-TIMESTEP = 0.001
-SAVE_NAME = "PENALTY_SCORE_MULTIPLE_STEPS_9_OUTPUT"
-LIVE_PLOT = True
+TIME_STEP = 0.001
+SAVE_NAME = "KINEMATIC_MODEL_HUBERLOSS_9_OUTPUT_5_INPUT"
+LIVE_PLOT = False
 LOGGING_FILE = f"{SAVE_NAME}_LOG.txt"
-
-style.use('fivethirtyeight')
-fig = plt.figure()
-ax1 = fig.add_subplot(1, 1, 1)
 
 
 def read_data(file_name: str):
@@ -34,42 +29,20 @@ def log(run, steps, points, reward):
         file.write(f"{run}\t{steps}\t{points}\t{reward}\n")
 
 
-def animate(i):
-    graph_data = open(LOGGING_FILE, 'r').read()
-    lines = graph_data.split('\n')
-    runs_list = []
-    steps_list = []
-    points_list = []
-    rewards_list = []
-    for line in lines:
-        if len(line) > 1:
-            run, steps, points, reward = line.split('\t')
-            runs_list.append(float(run))
-            steps_list.append(float(steps))
-            points_list.append(float(points))
-            rewards_list.append(float(reward))
-    ax1.clear()
-    ax1.plot(runs_list, steps_list, label="Steps")
-    ax1.plot(runs_list, points_list, label="Points Reached")
-    ax1.plot(runs_list, rewards_list, label="Rewards Obtained")
-    ax1.set_xlabel("Run")
-    ax1.legend()
-
-
 if __name__ == "__main__":
 
     data = read_data(TRAINING_FILES[0])
-    # data = np.array(data[0::10])  # Take every tenth value
 
     tyre_model = LinearTyre()
-    vehicle = Vehicle(tyre_model=tyre_model, dt=TIMESTEP)
-    simulation = Simulation(sim_name="Training1", vehicle=vehicle, input_type="path", input_data=data,
-                            timestep=TIMESTEP, timeout=50., iterations_per_step=100, waypoint_threshold=0.5,
+    vehicle_kinematic = KinematicVehicleModel(dt=TIME_STEP)
+    # vehicle_dynamic = DynamicVehicleModel()
+
+    simulation = Simulation(sim_name="Training1", vehicle=vehicle_kinematic, input_data=data,
+                            time_step=TIME_STEP, timeout=50., iterations_per_step=10, way_point_threshold=0.5,
                             distance_between_points=5.)
-    score_logger = ScoreLogger("Training1")
-    observation_space = 4
+    observation_space = 5
     action_space = 9
-    dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME)
+    dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME, gpu=True)
     run = 0
 
     max_steps = 0
@@ -83,9 +56,7 @@ if __name__ == "__main__":
     avg_points_reached = 0
 
     try:
-
         while True:
-
             run += 1
             state = simulation.reset()
             # state = np.array([state[0], state[2]]) # Drop d2 and theta2
@@ -120,19 +91,21 @@ if __name__ == "__main__":
                 total_reward += reward
                 # state_next = np.array([state_next[0], state_next[2]]) # Drop d2 and theta2
                 state_next = np.reshape(state_next, [1, observation_space])
-                dqn.remember(state, action, reward, state_next, terminal)
+                dqn.remember(state=state, action=action, reward=reward, next_state=state_next, done=terminal)
                 state = state_next
 
                 if terminal:
                     avg_steps += step
                     avg_points_reached += points_reached
 
-                    print("=============================================================")
+                    print("\n===================================================")
+                    print("PREVIOUS RUN DATA")
+                    print("===================================================")
                     print(f"Run: {run}, exploration: {dqn.exploration_rate}, steps: {step}")
                     print(f"Total sim time : {run_time}, Total points reached: {points_reached}")
                     print(f"Run end condition: {end_condition}")
                     print(f"Total rewards: {total_reward}")
-                    print("=============================================================")
+                    print("===================================================\n")
 
                     if step >= max_steps:
                         max_steps = step
@@ -157,7 +130,9 @@ if __name__ == "__main__":
                 train = time.time()
                 dqn.experience_replay()
                 train_time += time.time() - train
-
+            print("\n===================================================")
+            print("ALL TIME DATA")
+            print("===================================================")
             print(f"Episode took {time.time() - start} seconds")
             print(f"Total step time: {step_time}")
             print(f"Total training time: {train_time}")
@@ -172,11 +147,6 @@ if __name__ == "__main__":
                 else:
                     print("DQN failed to solve run.")
                 exit(1)
-
-            if LIVE_PLOT:
-                log(run=run, steps=step, points=points_reached, reward=total_reward)
-                ani = animation.FuncAnimation(fig, animate, interval=1000)
-                plt.show()
 
             if run == 10:
                 simulation.log_data(file_name="TestLog")

@@ -1,7 +1,6 @@
 import random
 import numpy as np
 import tensorflow as tf
-# from tensorflow.keras import
 from collections import deque
 from keras.models import Sequential
 from keras.layers import Dense
@@ -22,8 +21,12 @@ EXPLORATION_DECAY = 0.9999
 
 class DQNController:
 
-    def __init__(self, observation_space, action_space, check_name: str):
-        config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 16})
+    def __init__(self, observation_space, action_space, check_name: str, gpu: True):
+        if gpu:
+            config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 16})
+        else:
+            config = tf.ConfigProto(device_count={'GPU': 0, 'CPU': 16})
+
         sess = tf.Session(config=config)
         keras.backend.set_session(sess)
 

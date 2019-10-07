@@ -1,8 +1,5 @@
 import numpy as np
-import pandas as pd
 import logging
-from scipy import interpolate
-from numba import jit
 import pandas as pd
 from typing import Optional
 
@@ -19,9 +16,6 @@ class LinearTyre:
         self.debug = debug
 
     def reset(self, save_name: Optional[str] = None):
-        if save_name is not None and len(self.data) > 0:
-            params = self.parameter_history()
-            params.to_csv(f"SavedData/tyredata_{save_name}.csv")
 
         self.data = []
 
@@ -72,7 +66,7 @@ class LinearTyre:
             print(fy)
 
         fy = fy * signs
-        # print(f"Forces : {fy} \t || Slip : {slip_angles} \t || ")
+
         self.data.append([time, slip_angles[0], normal[0], fy[0], slip_angles[1], normal[1], fy[1]])
 
         return fy
