@@ -108,7 +108,7 @@ class Simulation:
         base_name = f"{name}_{t}"
         self.simulation_name = f"{base_name}_{self.episode}"
 
-        self.closest_points = self.ClosestPoints(p1=self.input_data[1], p2=self.input_data[2], start_index=1)
+        self.closest_points = self.ClosestPoints(p1=self.input_data[0], p2=self.input_data[1], start_index=0)
         self.number_of_points = len(self.input_data)
 
         self.prev_distance = None
@@ -139,13 +139,18 @@ class Simulation:
 
         return self.last_state
 
-    def _set_vehicle_position(self):
-        x = self.input_data[0][0]
-        y = self.input_data[0][1]
-        delta_x = self.closest_points.p1[0] - x
-        delta_y = self.closest_points.p1[1] - y
-        heading = np.arctan2(delta_y, delta_x)
-        self.vehicle.set_position(x, y, heading)
+    def _set_vehicle_position(self, random: bool = False):
+        if random:
+            x = random.
+        else:
+            self.closest_points = self.ClosestPoints(p1=self.input_data[1], p2=self.input_data[2], start_index=1)
+            self.number_of_points = len(self.input_data - 1)
+            x = self.input_data[0][0]
+            y = self.input_data[0][1]
+            delta_x = self.closest_points.p1[0] - x
+            delta_y = self.closest_points.p1[1] - y
+            heading = np.arctan2(delta_y, delta_x)
+            self.vehicle.set_position(x, y, heading)
 
 ########################################################################################################################
 # -------------------------------------------CALCULATION FUNCTIONS---------------------------------------------------- #
@@ -366,31 +371,37 @@ class Simulation:
         # 7 = +5 degrees right
         # 8 = *10 degrees right
 
-        if action == 0:
-            steer_angle = 10
-        elif action == 1:
-            steer_angle = 5
-        elif action == 2:
-            steer_angle = 3
-        elif action == 3:
-            steer_angle = 1
-        elif action == 4:
-            steer_angle = 0
-        elif action == 5:
-            steer_angle = -1
-        elif action == 6:
-            steer_angle = -3
-        elif action == 7:
-            steer_angle = -5
-        elif action == 8:
-            steer_angle = -10
+        # if action == 0:
+        #     steer_angle = 10
+        # elif action == 1:
+        #     steer_angle = 5
+        # elif action == 2:
+        #     steer_angle = 3
+        # elif action == 3:
+        #     steer_angle = 1
+        # elif action == 4:
+        #     steer_angle = 0
+        # elif action == 5:
+        #     steer_angle = -1
+        # elif action == 6:
+        #     steer_angle = -3
+        # elif action == 7:
+        #     steer_angle = -5
+        # elif action == 8:
+        #     steer_angle = -10
 
+        if action == 0:
+            steer_angle = - 5
+        elif action == 1:
+            steer_angle = 0
+        elif action == 2:
+            steer_angle = 5
         else:
             print("Invalid action")
             return None
 
-        # angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta)/10
-        angle_increment = np.deg2rad(steer_angle / 10)
+        angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta)/10
+        # angle_increment = np.deg2rad(steer_angle / 10)
         set_angle = self.vehicle.delta
         for iteration in range(self.iterations_per_step):
             if iteration < 10:

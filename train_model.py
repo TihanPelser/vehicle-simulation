@@ -40,9 +40,9 @@ if __name__ == "__main__":
     simulation = Simulation(sim_name="Training1", vehicle=vehicle_kinematic, input_data=data,
                             time_step=TIME_STEP, timeout=50., iterations_per_step=10, way_point_threshold=0.5,
                             distance_between_points=5.)
-    observation_space = 5
-    action_space = 9
-    dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME, gpu=True)
+    observation_space = 1
+    action_space = 3
+    dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME, gpu=False)
     run = 0
 
     max_steps = 0
@@ -59,9 +59,9 @@ if __name__ == "__main__":
         while True:
             run += 1
             state = simulation.reset()
-            # state = np.array([state[0], state[2]]) # Drop d2 and theta2
-            # print(state)
+            state = np.array(state[2])  # Keep only theta1
             state = np.reshape(state, [1, observation_space])
+            print(f"Initial state: {state}")
             step = 0
             total_reward = 0
             start = time.time()
@@ -89,7 +89,8 @@ if __name__ == "__main__":
                 # reward = reward if not terminal else -reward
 
                 total_reward += reward
-                # state_next = np.array([state_next[0], state_next[2]]) # Drop d2 and theta2
+                # print(f"State next: {state_next}")
+                state_next = np.array(state_next[2])  # Keep only theta1
                 state_next = np.reshape(state_next, [1, observation_space])
                 dqn.remember(state=state, action=action, reward=reward, next_state=state_next, done=terminal)
                 state = state_next
