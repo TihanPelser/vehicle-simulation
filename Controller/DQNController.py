@@ -16,16 +16,14 @@ BATCH_SIZE = 64
 
 EXPLORATION_MAX = 1.0
 EXPLORATION_MIN = 0.01
-EXPLORATION_DECAY = 0.9999
+EXPLORATION_DECAY = 0.999
 
 
 class DQNController:
 
-    def __init__(self, observation_space, action_space, check_name: str, gpu: True):
-        if gpu:
-            config = tf.ConfigProto(device_count={'GPU': 1, 'CPU': 1})
-        else:
-            config = tf.ConfigProto(device_count={'GPU': 0, 'CPU': 1})
+    def __init__(self, observation_space, action_space, check_name: str, gpu_count: int = 1, cpu_count: int = 16):
+
+        config = tf.ConfigProto(device_count={'GPU': gpu_count, 'CPU': cpu_count})
 
         sess = tf.Session(config=config)
         keras.backend.set_session(sess)
@@ -42,7 +40,7 @@ class DQNController:
         # self.model.compile(loss=tf.keras.losses.Huber(), optimizer=Adam(lr=LEARNING_RATE))
         self.model = Sequential()
         self.model.add(Dense(6, input_shape=(observation_space,), activation="tanh"))
-        self.model.add(Dense(self.action_space, activation="tanh"))
+        self.model.add(Dense(self.action_space, activation="linear"))
         self.model.compile(loss="mse", optimizer=Adam(lr=LEARNING_RATE))
         self.checkpoint = keras.callbacks.ModelCheckpoint(filepath=f"./{check_name}.hdf5", verbose=1,
                                                           period=10000)

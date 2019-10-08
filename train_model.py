@@ -38,11 +38,11 @@ if __name__ == "__main__":
     # vehicle_dynamic = DynamicVehicleModel()
 
     simulation = Simulation(sim_name="Training1", vehicle=vehicle_kinematic, input_data=data,
-                            time_step=TIME_STEP, timeout=50., iterations_per_step=10, way_point_threshold=0.5,
+                            time_step=TIME_STEP, timeout=60., iterations_per_step=10, way_point_threshold=0.5,
                             distance_between_points=5.)
     observation_space = 1
     action_space = 3
-    dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME, gpu=False)
+    dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME)
     run = 0
 
     max_steps = 0

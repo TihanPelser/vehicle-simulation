@@ -9,6 +9,7 @@ from collections import namedtuple
 import time
 import pygame
 import sys
+import random
 
 
 class Simulation:
@@ -88,10 +89,13 @@ class Simulation:
         print(f"Number of Waypoints: {len(input_data)}")
 
     def reset(self):
+
         self.has_been_reset = True
         self.episode += 1
         self.points_reached = 0
         self._vehicle_coords = []
+
+        self.vehicle.reset()
 
         self.dt = self.initial.dt
         self.timeout = self.initial.timeout
@@ -108,8 +112,9 @@ class Simulation:
         base_name = f"{name}_{t}"
         self.simulation_name = f"{base_name}_{self.episode}"
 
-        self.closest_points = self.ClosestPoints(p1=self.input_data[0], p2=self.input_data[1], start_index=0)
-        self.number_of_points = len(self.input_data)
+        self.closest_points = self.ClosestPoints(p1=self.input_data[1], p2=self.input_data[2], start_index=1)
+        self.number_of_points = len(self.input_data) - 1
+        self._set_vehicle_position(random_state=True)
 
         self.prev_distance = None
         self.prev_angle = None
@@ -119,7 +124,6 @@ class Simulation:
         self.is_final = False
         self.way_point_reached_in_step = False
         self.current_run += 1
-        self.vehicle.reset()
 
         vehicle_status = self.vehicle.get_status()
         vehicle_coords = vehicle_status[0:2]
@@ -139,18 +143,19 @@ class Simulation:
 
         return self.last_state
 
-    def _set_vehicle_position(self, random: bool = False):
-        if random:
-            x = random.
-        else:
-            self.closest_points = self.ClosestPoints(p1=self.input_data[1], p2=self.input_data[2], start_index=1)
-            self.number_of_points = len(self.input_data - 1)
-            x = self.input_data[0][0]
-            y = self.input_data[0][1]
-            delta_x = self.closest_points.p1[0] - x
-            delta_y = self.closest_points.p1[1] - y
-            heading = np.arctan2(delta_y, delta_x)
-            self.vehicle.set_position(x, y, heading)
+    def _set_vehicle_position(self, random_state: bool = False):
+        x = self.input_data[0][0]
+        y = self.input_data[0][1]
+        delta_x = self.closest_points.p1[0] - x
+        delta_y = self.closest_points.p1[1] - y
+
+        heading = np.arctan2(delta_y, delta_x)
+        if random_state:
+            # Add random noise between -65 and 65 to initial heading
+            noise = np.deg2rad((random.random() * 130) - 65)
+            heading += noise
+
+        self.vehicle.set_position(x, y, heading)
 
 ########################################################################################################################
 # -------------------------------------------CALCULATION FUNCTIONS---------------------------------------------------- #
@@ -328,12 +333,12 @@ class Simulation:
 
         elif reward_type == "penalty":
             # Pure negative rewards
-            reward = - abs(np.rad2deg(theta1))
+            reward = - abs(theta1)/120
 
         elif reward_type == "inverse_penalty":
             # Pure negative rewards
             # To be used when 'inverse' states are used
-            reward = - (120 - abs(np.rad2deg(theta1)))
+            reward = - (120 - abs(theta1))
 
         elif reward_type == "point_reached":
             if self.way_point_reached_in_step:
@@ -427,7 +432,7 @@ class Simulation:
                 end_condition = "Timeout"
                 break
 
-            if abs(self.last_state[2]) >= np.deg2rad(120):
+            if abs(self.last_state[2]) >= 120:
                 self.terminal = True
                 end_condition = "Error exceeded 120 degrees"
                 break
@@ -607,6 +612,14 @@ class Simulation:
         distance_2_data = self._data_font.render(f"{round(self.last_state[1], 2)}", True, (200, 10, 10))
         distance_2_data_rect = distance_2_data.get_rect()
         distance_2_data_lefttop = (self._text_box.centerx - int(round(distance_2_data_rect.width / 2) + 20), 345)
+        # Points Reached Label
+        points_reached_label = self._data_font.render("POINTS REACHED", True, (0, 0, 0))
+        points_reached_label_rect = points_reached_label.get_rect()
+        points_reached_label_lefttop = (self._text_box.centerx - int(round(points_reached_label_rect.width / 2 + 20)), 370)
+        # Distance 2 Data
+        points_reached_data = self._data_font.render(f"{self.points_reached}", True, (200, 10, 10))
+        points_reached_data_rect = points_reached_data.get_rect()
+        points_reached_data_lefttop = (self._text_box.centerx - int(round(points_reached_data_rect.width / 2) + 20), 390)
 
         self._screen.blit(text_heading, text_heading_lefttop)
 
@@ -627,6 +640,9 @@ class Simulation:
 
         self._screen.blit(distance_2_label, distance_2_label_lefttop)
         self._screen.blit(distance_2_data, distance_2_data_lefttop)
+
+        self._screen.blit(points_reached_label, points_reached_label_lefttop)
+        self._screen.blit(points_reached_data, points_reached_data_lefttop)
 
         pygame.draw.rect(self._screen, (0, 0, 0), self._text_box, 1)
 
