@@ -88,7 +88,7 @@ class Simulation:
         print("Sim created...")
         print(f"Number of Waypoints: {len(input_data)}")
 
-    def reset(self):
+    def reset(self, epsilon):
 
         self.has_been_reset = True
         self.episode += 1
@@ -114,7 +114,7 @@ class Simulation:
 
         self.closest_points = self.ClosestPoints(p1=self.input_data[1], p2=self.input_data[2], start_index=1)
         self.number_of_points = len(self.input_data) - 1
-        self._set_vehicle_position(random_state=True)
+        self._set_vehicle_position(random_state=True, epsilon=epsilon)
 
         self.prev_distance = None
         self.prev_angle = None
@@ -143,7 +143,7 @@ class Simulation:
 
         return self.last_state
 
-    def _set_vehicle_position(self, random_state: bool = False):
+    def _set_vehicle_position(self, random_state: bool = False, epsilon: float = 1):
         x = self.input_data[0][0]
         y = self.input_data[0][1]
         delta_x = self.closest_points.p1[0] - x
@@ -153,7 +153,7 @@ class Simulation:
         if random_state:
             # Add random noise between -65 and 65 to initial heading
             noise = np.deg2rad((random.random() * 130) - 65)
-            heading += noise
+            heading += noise * epsilon
 
         self.vehicle.set_position(x, y, heading)
 
@@ -281,8 +281,8 @@ class Simulation:
         # self.last_state = np.array([normalised_d1, normalised_d2, theta1_error, theta2_error])
 
         # State consists of inverse, normalised distances and heading errors
-        self.last_state = np.array([inverse_d1, inverse_d2, np.rad2deg(theta1_error), np.rad2deg(theta2_error),
-                                    np.rad2deg(vehicle_heading)])
+        self.last_state = np.array([inverse_d1, inverse_d2, np.rad2deg(theta1_error)/120, np.rad2deg(theta2_error)/120,
+                                    np.rad2deg(vehicle_heading)/120])
 
     def _calculate_reward(self, reward_type: str, ) -> int:
 
@@ -333,7 +333,7 @@ class Simulation:
 
         elif reward_type == "penalty":
             # Pure negative rewards
-            reward = - abs(theta1)/120
+            reward = - abs(theta1)
 
         elif reward_type == "inverse_penalty":
             # Pure negative rewards
@@ -396,11 +396,15 @@ class Simulation:
         #     steer_angle = -10
 
         if action == 0:
-            steer_angle = - 5
+            steer_angle = - 10
         elif action == 1:
-            steer_angle = 0
+            steer_angle = - 5
         elif action == 2:
+            steer_angle = 0
+        elif action == 3:
             steer_angle = 5
+        elif action == 4:
+            steer_angle = 10
         else:
             print("Invalid action")
             return None
@@ -432,7 +436,7 @@ class Simulation:
                 end_condition = "Timeout"
                 break
 
-            if abs(self.last_state[2]) >= 120:
+            if abs(self.last_state[2]) >= 1:
                 self.terminal = True
                 end_condition = "Error exceeded 120 degrees"
                 break
