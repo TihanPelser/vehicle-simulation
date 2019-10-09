@@ -284,6 +284,7 @@ class Simulation:
         self.last_state = np.array([inverse_d1, inverse_d2, np.rad2deg(theta1_error)/120, np.rad2deg(theta2_error)/120,
                                     np.rad2deg(vehicle_heading)/120])
 
+
     def _calculate_reward(self, reward_type: str, ) -> int:
 
         reward = 0
@@ -444,7 +445,7 @@ class Simulation:
         reward = self._calculate_reward(reward_type="penalty")
 
         if self.terminal:
-            reward -= 1000
+            reward -= 10
 
         self.results.append([self.current_run, self.last_state, reward, self.points_reached, self.terminal,
                              self.run_time, end_condition])
