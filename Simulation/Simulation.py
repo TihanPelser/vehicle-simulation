@@ -281,8 +281,8 @@ class Simulation:
         # self.last_state = np.array([normalised_d1, normalised_d2, theta1_error, theta2_error])
 
         # State consists of inverse, normalised distances and heading errors
-        self.last_state = np.array([inverse_d1, inverse_d2, np.rad2deg(theta1_error), np.rad2deg(theta2_error),
-                                    np.rad2deg(vehicle_heading)])
+        self.last_state = np.array([inverse_d1, inverse_d2, np.rad2deg(theta1_error)/120, np.rad2deg(theta2_error)/120,
+                                    np.rad2deg(vehicle_heading)/180])
 
     def _calculate_reward(self, reward_type: str, ) -> int:
 
@@ -432,7 +432,7 @@ class Simulation:
                 end_condition = "Timeout"
                 break
 
-            if abs(self.last_state[2]) >= 120:
+            if abs(self.last_state[2]) >= 1:
                 self.terminal = True
                 end_condition = "Error exceeded 120 degrees"
                 break
@@ -440,7 +440,7 @@ class Simulation:
         reward = self._calculate_reward(reward_type="penalty")
 
         if self.terminal:
-            reward -= 1000
+            reward -= 10
 
         self.results.append([self.current_run, self.last_state, reward, self.points_reached, self.terminal,
                              self.run_time, end_condition])

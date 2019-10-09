@@ -42,7 +42,7 @@ if __name__ == "__main__":
                             distance_between_points=5.)
     observation_space = 1
     action_space = 3
-    dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME)
+    dqn = DQNController(observation_space, action_space, check_name=SAVE_NAME, cpu_count=2, gpu_count=0)
     run = 0
 
     max_steps = 0
