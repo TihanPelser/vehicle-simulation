@@ -39,7 +39,8 @@ class DQNController:
         # self.model.add(Dense(self.action_space, activation="linear"))
         # self.model.compile(loss=tf.keras.losses.Huber(), optimizer=Adam(lr=LEARNING_RATE))
         self.model = Sequential()
-        self.model.add(Dense(12, input_shape=(observation_space,), activation="tanh"))
+        self.model.add(Dense(24, input_shape=(observation_space,), activation="tanh"))
+        self.model.add(Dense(24, activation="tanh"))
         self.model.add(Dense(24, activation="tanh"))
         self.model.add(Dense(self.action_space, activation="linear"))
         self.model.compile(loss="mse", optimizer=Adam(lr=LEARNING_RATE))
@@ -71,3 +72,8 @@ class DQNController:
         self.exploration_rate *= EXPLORATION_DECAY
         self.exploration_rate = max(EXPLORATION_MIN, self.exploration_rate)
 
+    def load_from_checkpoint(self, checkpoint_file: str):
+        try:
+            self.model.load_weights(checkpoint_file)
+        except FileNotFoundError:
+            print("Incorrect file specified!")
