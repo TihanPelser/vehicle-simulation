@@ -33,18 +33,13 @@ class DQNController:
         self.action_space = action_space
         self.memory = deque(maxlen=MEMORY_SIZE)
 
-        # self.model = Sequential()
-        # self.model.add(Dense(24, input_shape=(observation_space,), activation="relu"))
-        # self.model.add(Dense(24, activation="relu"))
-        # self.model.add(Dense(self.action_space, activation="linear"))
-        # self.model.compile(loss=tf.keras.losses.Huber(), optimizer=Adam(lr=LEARNING_RATE))
         self.model = Sequential()
         self.model.add(Dense(24, input_shape=(observation_space,), activation="tanh"))
         self.model.add(Dense(24, activation="tanh"))
         self.model.add(Dense(24, activation="tanh"))
         self.model.add(Dense(self.action_space, activation="linear"))
         self.model.compile(loss="mse", optimizer=Adam(lr=LEARNING_RATE))
-        self.checkpoint = keras.callbacks.ModelCheckpoint(filepath=f"./{check_name}.hdf5", verbose=1,
+        self.checkpoint = keras.callbacks.ModelCheckpoint(filepath=f"./Checkpoints/{check_name}.ckpt", verbose=1,
                                                           period=10000)
         self.callbacks_list = [self.checkpoint]
         self.parameter_history = []
