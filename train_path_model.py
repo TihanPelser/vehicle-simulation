@@ -6,10 +6,11 @@ from TyreModel.LinearCutoff import LinearTyre
 import numpy as np
 import time
 import pandas as pd
+import random
 
-TRAINING_FILES = ["DLC.txt", "Sine.txt"]
+TRAINING_FILES = ["DLC.txt", "Sine.txt", "manual_dlc_lc_rotated.txt"]
 TIME_STEP = 0.001
-SAVE_NAME = "2_IN_5_OUT_PATH"
+SAVE_NAME = "3_OUTPUT_PATH"
 LIVE_PLOT = False
 LOGGING_FILE = f"{SAVE_NAME}_LOG.txt"
 
@@ -19,7 +20,7 @@ def read_data(file_name: str):
     with open(f"TrainingData/{file_name}", "r") as file:
         for line in file:
             vals = line.split(',')
-            file_data.append([float(vals[0]), float(vals[1])])
+            file_data.append([round(float(vals[0]), 2), round(float(vals[1]), 2)])
     return np.array(file_data)
 
 
@@ -30,24 +31,19 @@ def log(episode_num: int, lat_errors, yaw_errors, actions, rewards):
 
 
 def bound_state(state: np.ndarray) -> np.ndarray:
-    bounded_lateral_error = state[0] / 2.5
+    bounded_lateral_error = state[0] / 5
     bounded_yaw_error = state[1] / np.pi
     return np.array([bounded_lateral_error, bounded_yaw_error])
 
 
 if __name__ == "__main__":
 
-    data = read_data(TRAINING_FILES[0])
-
     tyre_model = LinearTyre()
     vehicle_kinematic = KinematicVehicleModel(dt=TIME_STEP)
     # vehicle_dynamic = DynamicVehicleModel()
 
-    simulation = PathSimulation(sim_name="PathTraining1", vehicle=vehicle_kinematic, input_data=data,
-                                time_step=TIME_STEP, timeout=60., iterations_per_step=50, way_point_threshold=0.5,
-                                distance_between_points=5.)
     observation_space = 2
-    action_space = 5
+    action_space = 3
     dqn = DQNController(observation_space=observation_space, action_space=action_space, check_name=SAVE_NAME)
     # dqn.model.load_weights("Models/Working-2-Input-5-Output.hdf5")
     episode = 0
@@ -63,6 +59,12 @@ if __name__ == "__main__":
 
     try:
         while True:
+
+            data = read_data(TRAINING_FILES[random.randint(0, 2)])
+            simulation = PathSimulation(sim_name="PathTraining1", vehicle=vehicle_kinematic, input_data=data,
+                                        time_step=TIME_STEP, timeout=60., iterations_per_step=50,
+                                        way_point_threshold=0.5,
+                                        distance_between_points=5.)
             all_lat_errors = []
             all_yaw_errors = []
             all_actions = []

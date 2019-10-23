@@ -80,7 +80,7 @@ class PathSimulation:
         self.current_run = 0
         pygame.init()
 
-        self.preview_distance = 2.78
+        self.preview_distance = 1.5
         self.preview_point = [0, 0]
         self.intersect_point = [0, 0]
         self.intercept_interval_index = [0, 1]
@@ -220,7 +220,7 @@ class PathSimulation:
                 if intersect_dist > final_point_dist:
                     lateral_intersect_point = intersect_point
                     self.intersect_point = lateral_intersect_point
-                    if intersect_dist >= 10:
+                    if intersect_dist >= 15:
                         self.terminal = True
                     break
 
@@ -271,7 +271,8 @@ class PathSimulation:
 
         # Reward based on change in lateral error
         if reward_type == "lateral-difference":
-            reward = abs(self.previous_lateral_error) - abs(lateral_error) * 20
+            # reward = abs(self.previous_lateral_error) - abs(lateral_error) * 20
+            reward = -abs(lateral_error) + abs(self.previous_lateral_error) - abs(lateral_error) * 50
 
         return reward
 
@@ -291,34 +292,45 @@ class PathSimulation:
             return None
 
         # Actions are encoded as:
-        # 0 = +10 degrees left
-        # 1 = +5 degrees left
-        # 4 = 0 degrees
-        # 5 = +1 degrees right
-        # 7 = +5 degrees right
-        # 8 = *10 degrees right
+        # 0 = 15 degrees right
+        # 1 = +5 degrees right
+        # 2 = 0 degrees
+        # 3 = 5 degrees left
+        # 4 = 15 degrees left
 
         if action == 0:
-            steer_angle = - 10
-        elif action == 1:
             steer_angle = - 5
-        elif action == 2:
+        elif action == 1:
             steer_angle = 0
-        elif action == 3:
+        elif action == 2:
             steer_angle = 5
-        elif action == 4:
-            steer_angle = 10
+
+        # if action == 0:
+        #     steer_angle = - 15
+        # elif action == 1:
+        #     steer_angle = - 5
+        # elif action == 2:
+        #     steer_angle = 0
+        # elif action == 3:
+        #     steer_angle = 5
+        # elif action == 4:
+        #     steer_angle = 15
         else:
             print("Invalid action")
             return None
 
-        angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta) / 10
+        angle_increment = 0.0167
+        # angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta) / 10
+        angle_increment_steps = (np.deg2rad(steer_angle) - self.vehicle.delta) / angle_increment
+        direction = np.sign(angle_increment_steps)
         # angle_increment = np.deg2rad(steer_angle / 10)
         set_angle = self.vehicle.delta
         end_condition = ""
         for iteration in range(self.iterations_per_step):
-            if iteration < 10:
-                set_angle += angle_increment
+            # if iteration < 10:
+            #     set_angle += angle_increment
+            if iteration < abs(angle_increment_steps):
+                set_angle += direction * angle_increment
 
             vehicle_status = self.vehicle.drive(steering_angle=set_angle)
             vehicle_coords = vehicle_status[0:2]
@@ -352,9 +364,9 @@ class PathSimulation:
                 end_condition = "Infinite lateral error"
                 break
 
-            if abs(self.last_state[0]) >= 2.5:
+            if abs(self.last_state[0]) >= 10:
                 self.terminal = True
-                end_condition = "Lateral error exceeded 2.5 m"
+                end_condition = "Lateral error exceeded 10 m"
                 break
 
         reward = self._calculate_reward(reward_type="lateral-difference")
@@ -436,8 +448,8 @@ class PathSimulation:
         self._screen = pygame.display.set_mode(self.SIZE)
         self._vehicle_sprite = pygame.image.load("res/SoftTarget.png")
 
-        vehicle_length = int(round(2 * self._scaling_factor))
-        vehicle_width = int(round(2 * self._scaling_factor))
+        vehicle_length = int(round(1.5 * self._scaling_factor))
+        vehicle_width = int(round(1.5 * self._scaling_factor))
         self._vehicle_sprite = pygame.transform.scale(self._vehicle_sprite, (vehicle_length, vehicle_width))
         self._vehicle_sprite_rect = self._vehicle_sprite.get_rect()
 

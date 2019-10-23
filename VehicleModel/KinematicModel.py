@@ -20,7 +20,7 @@ class KinematicVehicleModel:
         self.global_theta = 0
         self.delta = 0
 
-        self.velocity = 2.78
+        self.velocity = 1.5
         self.acceleration = 0
 
         self.dt = dt
