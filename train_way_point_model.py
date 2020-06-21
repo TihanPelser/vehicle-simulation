@@ -1,8 +1,8 @@
-from Controller.DQNController import DQNController
-from Simulation.WayPointSimulation import WayPointSimulation
-from VehicleModel.DynamicModel import DynamicVehicleModel
-from VehicleModel.KinematicModel import KinematicVehicleModel
-from TyreModel.LinearCutoff import LinearTyre
+from controller.DQNController import DQNController
+from simulation.waypoint_simulation import WayPointSimulation
+from vehicle_models.dynamic_model import DynamicVehicleModel
+from vehicle_models.kinematic_model import KinematicVehicleModel
+from tyre_model.LinearCutoff import LinearTyre
 import numpy as np
 import time
 import matplotlib.pyplot as plt
@@ -43,7 +43,7 @@ if __name__ == "__main__":
     observation_space = 1
     action_space = 5
     dqn = DQNController(observation_space=observation_space, action_space=action_space, check_name=SAVE_NAME)
-    # dqn.model.load_weights("Models/Working-2-Input-5-Output.hdf5")
+    # dqn.model.load_weights("models/Working-2-Input-5-Output.hdf5")
     run = 0
 
     max_steps = 0

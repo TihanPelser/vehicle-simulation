@@ -1,5 +1,5 @@
-from VehicleModel.KinematicModel import KinematicVehicleModel
-from VehicleModel.DynamicModel import DynamicVehicleModel
+from vehicle_models.kinematic_model import KinematicVehicleModel
+from vehicle_models.dynamic_model import DynamicVehicleModel
 import pandas as pd
 import numpy as np
 import logging
@@ -20,7 +20,7 @@ class PathSimulation:
 
     _vehicle_coords: List = []
 
-    # Simulation parameters
+    # simulation parameters
     debug: bool
     dt: float  # Time step [s]
     timeout: float
@@ -103,7 +103,7 @@ class PathSimulation:
         self.input_data = self.initial.input_data
         self.iterations_per_step = self.initial.iterations_per_step
         self.way_point_threshold = self.initial.way_point_threshold
-        self.distance_between_points = self.initial.distance_between_points
+        self.distance_between_points = self.initial.DIST_BETWEEN_POINTS
         self.run_time = 0.
         self.results = []
 
@@ -205,7 +205,8 @@ class PathSimulation:
 
             # Check if lines intersect in segment end points
             if sorted([p1[0], p2[0], intersect_point[0]])[1] == intersect_point[0]:
-                sorted_y = sorted([p1[1], p2[1], intersect_point[1]])
+                sorted_y = sorted([round(p1[1], 2), round(p2[1], 2), round(intersect_point[1], 2)])
+
                 if sorted_y[1] == intersect_point[1]:
                     lateral_intersect_point = intersect_point
                     self.intersect_point = lateral_intersect_point
@@ -271,9 +272,10 @@ class PathSimulation:
 
         # Reward based on change in lateral error
         if reward_type == "lateral-difference":
-            # reward = abs(self.previous_lateral_error) - abs(lateral_error) * 20
-            reward = -abs(lateral_error) + abs(self.previous_lateral_error) - abs(lateral_error) * 50
-
+            reward = abs(self.previous_lateral_error) - abs(lateral_error) * 50
+            # reward = -abs(lateral_error) + abs(self.previous_lateral_error) - abs(lateral_error) * 50
+            # reward = - abs(lateral_error)
+            # reward = 2.5 - abs(lateral_error)
         return reward
 
 ########################################################################################################################
@@ -292,45 +294,38 @@ class PathSimulation:
             return None
 
         # Actions are encoded as:
-        # 0 = 15 degrees right
-        # 1 = +5 degrees right
-        # 2 = 0 degrees
-        # 3 = 5 degrees left
-        # 4 = 15 degrees left
+        # 0 = 10 degrees left
+        # 1 = 5 degrees left
+        # 2 = 0 degrees (straight)
+        # 3 = 5 degrees right
+        # 4 = 10 degrees right
 
         if action == 0:
-            steer_angle = - 5
+            steer_angle = - 10
         elif action == 1:
-            steer_angle = 0
+            steer_angle = - 5
         elif action == 2:
+            steer_angle = 0
+        elif action == 3:
             steer_angle = 5
-
-        # if action == 0:
-        #     steer_angle = - 15
-        # elif action == 1:
-        #     steer_angle = - 5
-        # elif action == 2:
-        #     steer_angle = 0
-        # elif action == 3:
-        #     steer_angle = 5
-        # elif action == 4:
-        #     steer_angle = 15
+        elif action == 4:
+            steer_angle = 10
         else:
             print("Invalid action")
             return None
 
-        angle_increment = 0.0167
-        # angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta) / 10
-        angle_increment_steps = (np.deg2rad(steer_angle) - self.vehicle.delta) / angle_increment
-        direction = np.sign(angle_increment_steps)
+        # angle_increment = 0.01676
+        angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta) / 10
+        # angle_increment_steps = (np.deg2rad(steer_angle) - self.vehicle.delta) / angle_increment
+        # direction = np.sign(angle_increment_steps)
         # angle_increment = np.deg2rad(steer_angle / 10)
         set_angle = self.vehicle.delta
         end_condition = ""
         for iteration in range(self.iterations_per_step):
-            # if iteration < 10:
-            #     set_angle += angle_increment
-            if iteration < abs(angle_increment_steps):
-                set_angle += direction * angle_increment
+            if iteration < 10:
+                set_angle += angle_increment
+            # if iteration < abs(angle_increment_steps):
+            #     set_angle += direction * angle_increment
 
             vehicle_status = self.vehicle.drive(steering_angle=set_angle)
             vehicle_coords = vehicle_status[0:2]
@@ -372,7 +367,7 @@ class PathSimulation:
         reward = self._calculate_reward(reward_type="lateral-difference")
 
         if self.terminal and not self.solved:
-            reward -= 100
+            reward -= 1000
 
         self.results.append([self.current_run, self.last_state, reward, self.points_reached, self.terminal,
                              self.run_time, end_condition])
@@ -552,7 +547,7 @@ class PathSimulation:
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                print("Simulation stopped. Exiting.")
+                print("simulation stopped. Exiting.")
                 sys.exit()
 
         vehicle_status = self.vehicle.get_status()

@@ -1,3 +1,13 @@
+# Training Logs
+BackupTrainingResults
+TrainingResults
+
+# Model Checkpoints
+Checkpoints
+
+# Jetbrains
+.idea
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

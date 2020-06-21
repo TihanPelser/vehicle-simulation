@@ -1,7 +1,7 @@
 import numpy as np
 import math
 import pandas as pd
-from TyreModel.LinearCutoff import LinearTyre
+from tyre_model.LinearCutoff import LinearTyre
 
 class DynamicVehicleModel:
     def __init__(self, dt: float, tyre_model: LinearTyre):

@@ -78,7 +78,7 @@ class KinematicVehicleModel:
         self.data.append(current_iteration_data)
 
     # MAIN DRIVE FUNCTION
-    def drive(self, steering_angle, ):
+    def drive(self, steering_angle):
         self._set_steering_angle(steering_angle)
         self._calculate_all()
         self.timestamp += self.dt

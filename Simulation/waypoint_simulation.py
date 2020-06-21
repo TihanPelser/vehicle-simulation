@@ -1,6 +1,6 @@
-from VehicleModel.KinematicModel import KinematicVehicleModel
-from VehicleModel.DynamicModel import DynamicVehicleModel
-from Controller.DQNController import DQNController
+from vehicle_models.kinematic_model import KinematicVehicleModel
+from vehicle_models.dynamic_model import DynamicVehicleModel
+from controller.DQNController import DQNController
 import pandas as pd
 import numpy as np
 import logging
@@ -24,7 +24,7 @@ class WayPointSimulation:
 
     _vehicle_coords: List = []
 
-    # Simulation parameters
+    # simulation parameters
     debug: bool
     dt: float  # Time step [s]
     timeout: float
@@ -102,7 +102,7 @@ class WayPointSimulation:
         self.input_data = self.initial.input_data
         self.iterations_per_step = self.initial.iterations_per_step
         self.way_point_threshold = self.initial.way_point_threshold
-        self.distance_between_points = self.initial.distance_between_points
+        self.distance_between_points = self.initial.DIST_BETWEEN_POINTS
         self.run_time = 0.
         self.results = []
 
@@ -657,7 +657,7 @@ class WayPointSimulation:
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                print("Simulation stopped. Exiting.")
+                print("simulation stopped. Exiting.")
                 sys.exit()
 
         vehicle_status = self.vehicle.get_status()

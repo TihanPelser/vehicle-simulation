@@ -1,16 +1,16 @@
-from Controller.DQNController import DQNController
-from Simulation.PathSimulation import PathSimulation
-from VehicleModel.DynamicModel import DynamicVehicleModel
-from VehicleModel.KinematicModel import KinematicVehicleModel
-from TyreModel.LinearCutoff import LinearTyre
+from controller.DQNController import DQNController
+from simulation.path_simulation import PathSimulation
+from vehicle_models.dynamic_model import DynamicVehicleModel
+from vehicle_models.kinematic_model import KinematicVehicleModel
+from tyre_model.LinearCutoff import LinearTyre
 import numpy as np
 import time
 import pandas as pd
 import random
 
-TRAINING_FILES = ["DLC.txt", "Sine.txt", "manual_dlc_lc_rotated.txt"]
+TRAINING_FILES = ["DLC.txt", "Sine.txt", "manual_dlc_lc_rotated.txt", "sine"]
 TIME_STEP = 0.001
-SAVE_NAME = "3_OUTPUT_PATH"
+SAVE_NAME = "REPORT_MODEL"
 LIVE_PLOT = False
 LOGGING_FILE = f"{SAVE_NAME}_LOG.txt"
 
@@ -24,14 +24,14 @@ def read_data(file_name: str):
     return np.array(file_data)
 
 
-def log(episode_num: int, lat_errors, yaw_errors, actions, rewards):
-    episode_data = np.stack((lat_errors, yaw_errors, actions, rewards), axis=-1)
-    frame = pd.DataFrame(data=episode_data, columns=["Lateral Error", "Yaw Error", "Action", "Reward"])
+def log(episode_num: int, lat_errors, yaw_errors, actions, rewards, eps):
+    episode_data = np.stack((lat_errors, yaw_errors, actions, rewards, eps), axis=-1)
+    frame = pd.DataFrame(data=episode_data, columns=["Lateral Error", "Yaw Error", "Action", "Reward", "Epsilon"])
     frame.to_csv(f"TrainingResults/{SAVE_NAME}_{episode_num}", sep=",", index=False)
 
 
 def bound_state(state: np.ndarray) -> np.ndarray:
-    bounded_lateral_error = state[0] / 5
+    bounded_lateral_error = state[0] / 2.5
     bounded_yaw_error = state[1] / np.pi
     return np.array([bounded_lateral_error, bounded_yaw_error])
 
@@ -43,9 +43,9 @@ if __name__ == "__main__":
     # vehicle_dynamic = DynamicVehicleModel()
 
     observation_space = 2
-    action_space = 3
+    action_space = 5
     dqn = DQNController(observation_space=observation_space, action_space=action_space, check_name=SAVE_NAME)
-    # dqn.model.load_weights("Models/Working-2-Input-5-Output.hdf5")
+    # dqn.model.load_weights("models/Working-2-Input-5-Output.hdf5")
     episode = 0
 
     max_steps = 0
@@ -60,7 +60,8 @@ if __name__ == "__main__":
     try:
         while True:
 
-            data = read_data(TRAINING_FILES[random.randint(0, 2)])
+            # data = read_data(TRAINING_FILES[random.randint(0, 2)])
+            data = read_data(TRAINING_FILES[0])
             simulation = PathSimulation(sim_name="PathTraining1", vehicle=vehicle_kinematic, input_data=data,
                                         time_step=TIME_STEP, timeout=60., iterations_per_step=50,
                                         way_point_threshold=0.5,
@@ -69,6 +70,7 @@ if __name__ == "__main__":
             all_yaw_errors = []
             all_actions = []
             all_rewards = []
+            epsilon = []
             episode += 1
             state = simulation.reset(dqn.exploration_rate)
             state = bound_state(state)
@@ -81,6 +83,7 @@ if __name__ == "__main__":
             step_time = 0
 
             while True:
+                epsilon.append(dqn.exploration_rate)
                 step += 1
                 simulation.render()
                 all_lat_errors.append(state[0, 0])
@@ -127,6 +130,7 @@ if __name__ == "__main__":
                 dqn.experience_replay()
                 train_time += time.time() - train
 
+
             print("\n===================================================")
             print("ALL TIME DATA")
             print("===================================================")
@@ -135,14 +139,17 @@ if __name__ == "__main__":
             print(f"Total training time: {train_time}")
             print("\n===================================================\n")
 
-            if len(all_lat_errors) > 1:
-                if episode == 1:
-                    log(episode_num=episode, lat_errors=all_lat_errors, yaw_errors=all_yaw_errors, rewards=all_rewards,
-                        actions=all_actions)
+            log(episode_num=episode, lat_errors=all_lat_errors, yaw_errors=all_yaw_errors, rewards=all_rewards,
+                actions=all_actions, eps=epsilon)
 
-                if episode % 10 == 0:
-                    log(episode_num=episode, lat_errors=all_lat_errors, yaw_errors=all_yaw_errors, rewards=all_rewards,
-                        actions=all_actions)
+            # if len(all_lat_errors) > 1:
+            #     if episode == 1:
+            #         log(episode_num=episode, lat_errors=all_lat_errors, yaw_errors=all_yaw_errors, rewards=all_rewards,
+            #             actions=all_actions)
+            #
+            #     if episode % 5 == 0:
+            #         log(episode_num=episode, lat_errors=all_lat_errors, yaw_errors=all_yaw_errors, rewards=all_rewards,
+            #             actions=all_actions)
 
     except KeyboardInterrupt:
         print("User exit")
