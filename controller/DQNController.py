@@ -53,6 +53,10 @@ class DQNController:
         q_values = self.model.predict(state)
         return np.argmax(q_values[0])
 
+    def act_no_explore(self, state):
+        q_values = self.model.predict(state)
+        return np.argmax(q_values[0])
+
     def experience_replay(self):
         if len(self.memory) < BATCH_SIZE:
             return
