@@ -103,7 +103,7 @@ class PathSimulation:
         self.input_data = self.initial.input_data
         self.iterations_per_step = self.initial.iterations_per_step
         self.way_point_threshold = self.initial.way_point_threshold
-        self.distance_between_points = self.initial.DIST_BETWEEN_POINTS
+        self.distance_between_points = self.initial.distance_between_points
         self.run_time = 0.
         self.results = []
 
@@ -314,23 +314,17 @@ class PathSimulation:
             print("Invalid action")
             return None
 
-        # angle_increment = 0.01676
         angle_increment = (np.deg2rad(steer_angle) - self.vehicle.delta) / 10
-        # angle_increment_steps = (np.deg2rad(steer_angle) - self.vehicle.delta) / angle_increment
-        # direction = np.sign(angle_increment_steps)
-        # angle_increment = np.deg2rad(steer_angle / 10)
+
         set_angle = self.vehicle.delta
         end_condition = ""
         for iteration in range(self.iterations_per_step):
             if iteration < 10:
                 set_angle += angle_increment
-            # if iteration < abs(angle_increment_steps):
-            #     set_angle += direction * angle_increment
 
             vehicle_status = self.vehicle.drive(steering_angle=set_angle)
             vehicle_coords = vehicle_status[0:2]
             self._vehicle_coords.append(vehicle_coords)
-            # print(f"Vehicle status: {vehicle_status}")
             vehicle_heading = vehicle_status[2]
             self._get_state(vehicle_coords=vehicle_coords, vehicle_heading=vehicle_heading)
             self.run_time += self.dt

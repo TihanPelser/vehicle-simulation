@@ -1,6 +1,6 @@
 from vehicle_models.kinematic_model import KinematicVehicleModel
 from vehicle_models.dynamic_model import DynamicVehicleModel
-from controller.DQNController import DQNController
+from controller.dqn_controller import DQNController
 import pandas as pd
 import numpy as np
 import logging

@@ -1,4 +1,4 @@
-from controller.DQNController import DQNController
+from controller.dqn_controller import DQNController
 from simulation.waypoint_simulation import WayPointSimulation
 from vehicle_models.dynamic_model import DynamicVehicleModel
 from vehicle_models.kinematic_model import KinematicVehicleModel
@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
                 step += 1
                 simulation.render()
-                action = dqn.act(state)
+                action = dqn.act_or_explore(state)
                 # state_next, reward, points_reached, terminal, time = simulation.step(step_type="action", input=action)
                 step_time_taken = time.time()
                 results = simulation.step(action=action)
